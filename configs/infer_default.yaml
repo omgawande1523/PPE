@@ -1,0 +1,18 @@
+# Default inference config for `python -m ppe.infer`.
+# Paths are relative to the repository root. One YAML per experiment:
+# copy this file, rename it to the run_id, and pass it with --config.
+
+weights: weights/best.pt      # YOLO11s, 11 classes, trained with Ultralytics 8.3.21
+source: "0"                   # webcam index, video file, image file or image folder
+conf: 0.25                    # Ultralytics default. Provisional: Phase 1 picks it on val, never on test.
+iou: 0.7
+imgsz: 640
+device: null                  # null = auto (cuda:0 if available, else cpu)
+seed: 0
+tracker: bytetrack.yaml       # used for webcam/video; still images are not tracked
+log_dir: runs/logs            # one JSON line per frame
+
+# Items a person must wear. Each is decided per person as present /
+# violation (a no_* box) / unknown (no evidence either way).
+# vest has no no_* class in Construction-PPE, so it is never a violation.
+required_items: [helmet, vest, gloves, boots, goggles]
