@@ -1,0 +1,27 @@
+# Phase 3 on the Jetson: TensorRT engines are tied to the GPU and TensorRT version
+# they are built with, so they are built on the board that runs them.
+# Run on the Jetson (from the repository root):
+#   python -m ppe.export --config configs/export/p3_export_jetson.yaml
+
+run_name: p3_export_yolo11s_jetson
+phase: 3
+model: yolo11s
+weights: weights/best.pt
+stem: yolo11s
+ultralytics_version: "8.3.21"
+out_dir: weights/export/yolo11s
+imgsz: 640
+device: 0                        # the Jetson's GPU
+seed: 0
+
+calibration:                     # same sample as the CPU exports: train split, never test
+  data: configs/data/construction_ppe.yaml
+  dataset: construction-ppe
+  split: train
+  n_images: 300
+  seed: 0
+
+targets:
+  - engine_fp16
+  - engine_int8
+  - onnx_fp32

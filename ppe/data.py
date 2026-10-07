@@ -42,6 +42,17 @@ def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+def sha256_path(path: Path) -> str:
+    """sha256 of a file, or of a directory (exported OpenVINO/NCNN/TFLite models) as sorted relative paths + bytes."""
+    if path.is_file():
+        return sha256_file(path)
+    h = hashlib.sha256()
+    for p in sorted(q for q in path.rglob("*") if q.is_file()):
+        h.update(p.relative_to(path).as_posix().encode("utf-8"))
+        h.update(sha256_file(p).encode("ascii"))
+    return h.hexdigest()
+
+
 def download(name: str) -> Path:
     spec = DATASETS[name]
     dest = REPO_ROOT / spec["dest"]

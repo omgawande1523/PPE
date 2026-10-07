@@ -1,0 +1,23 @@
+# Phase 3 on a Raspberry Pi: clean golden-set accuracy of the Pi runtimes ON the Pi.
+# NCNN uses fp16 arithmetic on ARM (not on x86), so its accuracy can differ from the cloud run.
+# Run on the Pi:  python -m ppe.quant --config configs/quant/p3_quant_pi.yaml --device-label pi5_8gb
+# Clean only (only: [none]) to keep it to minutes; drop 'only' for the full 18 cells (hours on a Pi).
+
+run_name: p3_quant_yolo11s_pi
+phase: 3
+model: yolo11s
+shift_config: configs/shift/p2_shift_yolo11s.yaml
+export_config: configs/export/p3_export_yolo11s.yaml
+bootstrap: 1000
+
+models:
+  tflite_fp32: {weights: weights/export/yolo11s/yolo11s_fp32.tflite, only: [none]}
+  tflite_int8: {weights: weights/export/yolo11s/yolo11s_int8.tflite, only: [none]}
+  tflite_int8static: {weights: weights/export/yolo11s/yolo11s_int8static.tflite, only: [none]}
+  ncnn_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32_ncnn_model, only: [none]}
+  ncnn_fp16:   {weights: weights/export/yolo11s/yolo11s_fp16_ncnn_model, only: [none]}
+
+comparisons:
+  - [tflite_fp32, tflite_int8]
+  - [tflite_fp32, tflite_int8static]
+  - [ncnn_fp32, ncnn_fp16]

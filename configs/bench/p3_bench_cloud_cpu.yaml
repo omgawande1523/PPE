@@ -1,0 +1,36 @@
+# Phase 3 speed and memory on the CLOUD CPU used for development (not an edge board).
+# Run (from the repository root), after python -m ppe.export --config configs/export/p3_export_yolo11s.yaml:
+#   python -m ppe.bench --config configs/bench/p3_bench_cloud_cpu.yaml
+# These numbers describe a shared 4-vCPU Xeon VM. They say how the formats rank against
+# each other on x86, not what a Raspberry Pi or Jetson will do. No power meter here.
+
+run_name: p3_bench_cloud_cpu
+phase: 3
+model: yolo11s
+device_label: cloud_cpu_xeon_4vcpu     # goes into the device column of results.csv
+device: cpu
+seed: 0
+imgsz: 640
+conf: 0.28                             # Phase 1 operating confidence (chosen on val)
+nms_iou: 0.7
+warmup: 20
+frames: 200
+runs: 3
+cooldown_s: 5
+images: {data: configs/data/construction_ppe.yaml, split: val, n: 50}
+
+models:
+  pytorch_fp32:  {weights: weights/best.pt}
+  onnx_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32.onnx}
+  onnx_int8:     {weights: weights/export/yolo11s/yolo11s_int8.onnx}
+  openvino_fp32: {weights: weights/export/yolo11s/yolo11s_fp32_openvino_model}
+  openvino_fp16: {weights: weights/export/yolo11s/yolo11s_fp16_openvino_model}
+  openvino_int8: {weights: weights/export/yolo11s/yolo11s_int8_openvino_model}
+  ncnn_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32_ncnn_model}
+  ncnn_fp16:     {weights: weights/export/yolo11s/yolo11s_fp16_ncnn_model}
+  tflite_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32.tflite}
+  tflite_fp16:   {weights: weights/export/yolo11s/yolo11s_fp16.tflite}
+  tflite_int8:   {weights: weights/export/yolo11s/yolo11s_int8.tflite}
+  tflite_int8static: {weights: weights/export/yolo11s/yolo11s_int8static.tflite}
+
+power: {source: none}

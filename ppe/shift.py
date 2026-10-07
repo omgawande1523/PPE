@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from ppe.data import IMAGE_SUFFIXES, REPO_ROOT, sha256_file
+from ppe.data import IMAGE_SUFFIXES, REPO_ROOT, sha256_file, sha256_path
 from ppe.eval import (FIELDS, RESULTS_CSV, VIOLATION_CLASSES, FIGURES_DIR, ap50_from_curve, append_rows, fmt,
                       git_commit, label_for, match_per_class, person_level, predict_split, prf_at)
 from ppe.infer import set_seed
@@ -480,7 +480,9 @@ def check_reference(rows: list[dict], p1_run: str | None) -> None:
         r["notes"] += f"; {msg}"
 
 
-def evaluate(cfg: dict, command: str, only: list[str] | None) -> list[dict]:
+def evaluate(cfg: dict, command: str, only: list[str] | None, collect: dict | None = None) -> list[dict]:
+    """All cells of one model. If collect is a dict, per-image counts of each synthetic cell land in it
+    (key = condition tag, "clean" for the reference), for paired comparisons between models (ppe.quant)."""
     from ultralytics import YOLO
     import ultralytics
 
@@ -512,7 +514,7 @@ def evaluate(cfg: dict, command: str, only: list[str] | None) -> list[dict]:
     verify(REPO_ROOT / cfg["golden_manifest"])
     golden = Path(cfg["golden_manifest"]).stem
 
-    model = YOLO(str(weights))
+    model = YOLO(str(weights), task="detect")
     names = {int(k): v for k, v in model.names.items()}
     nc = len(names)
     by_name = {v: k for k, v in names.items()}
@@ -520,7 +522,7 @@ def evaluate(cfg: dict, command: str, only: list[str] | None) -> list[dict]:
     ds_names = data["names"]
 
     base = {"run_id": run_id, "date": stamp.strftime("%Y-%m-%d"), "git_commit": git_commit(), "phase": cfg["phase"],
-            "model": cfg["model"], "weights": f"{cfg['weights']}@{sha256_file(weights)[:12]}",
+            "model": cfg["model"], "weights": f"{cfg['weights']}@{sha256_path(weights)[:12]}",
             "precision_mode": cfg["precision_mode"], "device": cfg["device"], "seed": seed, "command": command}
     rows: list[dict] = []
     op = f"deployed predict path, {t_note}, match IoU {iou_thr}"
@@ -634,6 +636,8 @@ def evaluate(cfg: dict, command: str, only: list[str] | None) -> list[dict]:
     ref_per = cell_rows(cfg["dataset"], cfg["split"], "clean", ref_res, all_cls, ref_ctx)
     check_reference(rows, cfg.get("operating_conf_source"))
     ref_cnt = per_image_counts(ref_res["preds"], nc, t, iou_thr, items, names)
+    if collect is not None:
+        collect["clean"] = ref_cnt
 
     # ---- synthetic conditions
     for cond in CONDITIONS:
@@ -653,6 +657,8 @@ def evaluate(cfg: dict, command: str, only: list[str] | None) -> list[dict]:
             per = cell_rows(cfg["dataset"], cfg["split"], tag, res, all_cls, ctx)
             cnt = per_image_counts(res["preds"], nc, t, iou_thr, items, names)
             cnt["name"] = ref_cnt["name"]      # same images; corrupted copies may be .png
+            if collect is not None:
+                collect[tag] = cnt
             delta_rows(cfg["dataset"], cfg["split"], tag, ref_res, ref_per, res, per, ref_cnt, cnt, all_cls, True, ctx)
 
     # ---- external sites

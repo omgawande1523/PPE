@@ -34,7 +34,7 @@ import numpy as np
 import yaml
 
 from ppe.associate import ITEM_CLASSES, PERSON_CLASS, VIOLATION, Box, assign, evaluate_frame, item_states
-from ppe.data import IMAGE_SUFFIXES, REPO_ROOT, resolve_data_yaml, sha256_file
+from ppe.data import IMAGE_SUFFIXES, REPO_ROOT, resolve_data_yaml, sha256_path
 from ppe.infer import set_seed
 
 RESULTS_CSV = REPO_ROOT / "results" / "results.csv"
@@ -439,7 +439,7 @@ def evaluate(cfg: dict, command: str) -> list[dict]:
     work = REPO_ROOT / "runs" / "eval" / run_id
     data_yaml, data = resolve_data_yaml(cfg["data"], work)
 
-    model = YOLO(str(weights))
+    model = YOLO(str(weights), task="detect")
     model_names = {int(k): v for k, v in model.names.items()}
     data_names = {int(k): v for k, v in data["names"].items()}
     if {k: v.lower() for k, v in model_names.items()} != {k: v.lower() for k, v in data_names.items()}:
@@ -455,7 +455,7 @@ def evaluate(cfg: dict, command: str) -> list[dict]:
 
     base = {
         "run_id": run_id, "date": stamp.strftime("%Y-%m-%d"), "git_commit": git_commit(),
-        "phase": cfg["phase"], "model": cfg["model"], "weights": f"{cfg['weights']}@{sha256_file(weights)[:12]}",
+        "phase": cfg["phase"], "model": cfg["model"], "weights": f"{cfg['weights']}@{sha256_path(weights)[:12]}",
         "precision_mode": cfg["precision_mode"], "device": cfg["device"], "dataset": cfg["dataset"],
         "condition": cfg.get("condition", "clean"), "seed": seed, "command": command,
     }

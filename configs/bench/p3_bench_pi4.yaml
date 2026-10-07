@@ -1,0 +1,39 @@
+# Phase 3 on a Raspberry Pi 4. Procedure: docs/edge_boards.md (Raspberry Pi section).
+# Run on the Pi (from the repository root):
+#   python -m ppe.bench --config configs/bench/p3_bench_pi4.yaml
+# then, with the USB meter's CSV copied to the Pi:
+#   python -m ppe.bench --energy RUN_ID --power-log meter.csv
+
+run_name: p3_bench_pi4
+phase: 3
+model: yolo11s
+device_label: pi4_4gb            # EDIT: board and RAM
+device: cpu
+seed: 0
+imgsz: 640
+conf: 0.28
+nms_iou: 0.7
+warmup: 20
+frames: 200
+runs: 3
+cooldown_s: 60                   # let the SoC cool between runs; temperature is logged per run
+images: {data: configs/data/construction_ppe.yaml, split: val, n: 50}
+
+models:
+  ncnn_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32_ncnn_model}
+  ncnn_fp16:     {weights: weights/export/yolo11s/yolo11s_fp16_ncnn_model}
+  tflite_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32.tflite}
+  tflite_fp16:   {weights: weights/export/yolo11s/yolo11s_fp16.tflite}
+  tflite_int8:   {weights: weights/export/yolo11s/yolo11s_int8.tflite}
+  tflite_int8static: {weights: weights/export/yolo11s/yolo11s_int8static.tflite}
+  onnx_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32.onnx}
+  onnx_int8:     {weights: weights/export/yolo11s/yolo11s_int8.onnx}
+  pytorch_fp32:  {weights: weights/best.pt}
+
+# USB-C power meter between the official 15 W supply and the Pi, logging to CSV.
+# Set the column names to the meter's export; time must be unix seconds (or set time_offset_s).
+power:
+  source: csv
+  csv_columns: {time: time, volts: volts, amps: amps}   # or {time: ..., watts: ...}
+  time_offset_s: 0
+  idle_seconds: 60

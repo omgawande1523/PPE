@@ -1,0 +1,20 @@
+# Phase 3 on the Jetson: accuracy of the TensorRT engines, which can only run there.
+# Run on the Jetson after python -m ppe.export --config configs/export/p3_export_jetson.yaml:
+#   python -m ppe.quant --config configs/quant/p3_quant_jetson.yaml --device-label jetson_orin_nano_8gb
+# Same cells, conf 0.28 and seeds as p3_quant_yolo11s.yaml; INT8 calibrated on train only.
+
+run_name: p3_quant_yolo11s_jetson
+phase: 3
+model: yolo11s
+shift_config: configs/shift/p2_shift_yolo11s.yaml
+export_config: configs/export/p3_export_jetson.yaml
+bootstrap: 1000
+
+models:
+  onnx_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32.onnx, device: 0}
+  engine_fp16: {weights: weights/export/yolo11s/yolo11s_fp16.engine, device: 0}
+  engine_int8: {weights: weights/export/yolo11s/yolo11s_int8.engine, device: 0}
+
+comparisons:
+  - [onnx_fp32, engine_fp16]
+  - [onnx_fp32, engine_int8]
