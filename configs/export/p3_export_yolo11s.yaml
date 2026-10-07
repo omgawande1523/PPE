@@ -22,7 +22,7 @@ calibration:
   dataset: construction-ppe
   split: train
   n_images: 300                  # Ultralytics recommends >= 300
-  n_images_tflite: 30            # first 30 of the same draw: onnx2tf INT8 at 640 px was killed for memory with 300 and 100 images (12.8 GB at 100) on the 15 GB VM
+  n_images_tflite: 300           # onnx2tf INT8 at 640 px was killed for memory at ~13-14 GB on the 15 GB dev VM with 300, 100 and 30 images alike: build TFLite INT8 on a machine with more RAM
   seed: 0
 
 targets:
