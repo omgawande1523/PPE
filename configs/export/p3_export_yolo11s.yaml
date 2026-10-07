@@ -22,7 +22,7 @@ calibration:
   dataset: construction-ppe
   split: train
   n_images: 300                  # Ultralytics recommends >= 300
-  n_images_tflite: 100           # first 100 of the same draw: onnx2tf keeps them all in RAM (300 were killed for memory on a 15 GB VM)
+  n_images_tflite: 30            # first 30 of the same draw: onnx2tf INT8 at 640 px was killed for memory with 300 and 100 images (12.8 GB at 100) on the 15 GB VM
   seed: 0
 
 targets:
