@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Data and large artefacts
+datasets/*
+!datasets/README.md
+weights/*.pt
+!weights/best.pt
+weights/*.onnx
+weights/*.engine
+runs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Team photos for the dashboard are kept local
+app/templates/team/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
