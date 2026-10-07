@@ -48,6 +48,16 @@ python -m ppe.shift --table RUN_ID                                 # markdown sh
 python -m ppe.shift --convert sh17 --src path/to/sh17              # external sets: see datasets/README.md
 ```
 
+## Reliability estimator
+
+```bash
+python -m ppe.estimator --config configs/estimator/p4_estimator_yolo11s.yaml   # six label-free signals, fit, error, lead time
+python -m ppe.estimator --table RUN_ID                                       # markdown tables from results.csv
+```
+
+Fits on val conditions only; the test split (golden v1) is used only to score the estimate. Per-image signals are cached
+in `runs/estimator/records/`; the first run takes about three hours on a 4-core CPU. Figures go to `results/figures/<run_id>/`.
+
 ## Run the dashboard
 
 ```bash
