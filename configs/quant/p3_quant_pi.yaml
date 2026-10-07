@@ -13,9 +13,11 @@ bootstrap: 1000
 models:
   tflite_fp32: {weights: weights/export/yolo11s/yolo11s_fp32.tflite, only: [none]}
   tflite_int8: {weights: weights/export/yolo11s/yolo11s_int8.tflite, only: [none]}
+  tflite_int8static: {weights: weights/export/yolo11s/yolo11s_int8static.tflite, only: [none]}
   ncnn_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32_ncnn_model, only: [none]}
   ncnn_fp16:   {weights: weights/export/yolo11s/yolo11s_fp16_ncnn_model, only: [none]}
 
 comparisons:
   - [tflite_fp32, tflite_int8]
+  - [tflite_fp32, tflite_int8static]
   - [ncnn_fp32, ncnn_fp16]

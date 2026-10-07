@@ -12,7 +12,11 @@ Targets (format_precision):
     onnx_fp32, onnx_int8                      ONNX Runtime; INT8 = static QDQ quantisation (see below)
     openvino_fp32, openvino_fp16, openvino_int8   OpenVINO (x86 only); INT8 via NNCF, Ultralytics' own path
     ncnn_fp32, ncnn_fp16                      NCNN (Raspberry Pi); FP16 = fp16 weight storage
-    tflite_fp32, tflite_fp16, tflite_int8     TensorFlow Lite via onnx2tf (Raspberry Pi)
+    tflite_fp32, tflite_fp16, tflite_int8     TensorFlow Lite via onnx2tf (Raspberry Pi); tflite_int8 is what
+                                              Ultralytics 8.3.21 calls int8: dynamic-range (int8 weights,
+                                              float activations), no calibration
+    tflite_int8static                         onnx2tf's *_integer_quant.tflite from the same conversion: int8
+                                              weights and activations, calibrated, float input/output
     engine_fp16, engine_int8                  TensorRT; needs an NVIDIA GPU, so it is built on the Jetson itself
 
 INT8 calibration uses a seeded random sample of the split named in the config
@@ -57,7 +61,7 @@ TARGETS = {
     "onnx": ["fp32", "int8"],
     "openvino": ["fp32", "fp16", "int8"],
     "ncnn": ["fp32", "fp16"],
-    "tflite": ["fp32", "fp16", "int8"],
+    "tflite": ["fp32", "fp16", "int8", "int8static"],
     "engine": ["fp16", "int8"],
 }
 
@@ -81,7 +85,8 @@ def size_mb(path: Path) -> float:
 
 # ----------------------------------------------------------------------------- calibration
 
-def calibration_images(cfg: dict) -> list[Path]:
+def calibration_images(cfg: dict, n_max: int | None = None) -> list[Path]:
+    """Seeded draw of n_images from the calibration split; n_max keeps the first n_max of that same draw."""
     cal = cfg["calibration"]
     if cal["split"] not in ("train", "val"):
         sys.exit(f"INT8 calibration split must be train or val, not {cal['split']!r} (test is the golden set).")
@@ -93,6 +98,8 @@ def calibration_images(cfg: dict) -> list[Path]:
     imgs = sorted(p for p in d.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
     n = min(int(cal["n_images"]), len(imgs))
     idx = np.random.default_rng(int(cal["seed"])).choice(len(imgs), n, replace=False)
+    if n_max is not None:
+        idx = idx[:n_max]
     return [imgs[i] for i in sorted(idx)]
 
 
@@ -135,8 +142,8 @@ def ultralytics_export(pt: Path, fmt_: str, prec: str, cfg: dict, calib: Path | 
     local = work / pt.name
     shutil.copy2(pt, local)
     kw = dict(format=fmt_, imgsz=int(cfg["imgsz"]), batch=1, device=cfg.get("device", "cpu"),
-              half=prec == "fp16", int8=prec == "int8", simplify=True)
-    if prec == "int8":
+              half=prec == "fp16", int8=prec.startswith("int8"), simplify=True)
+    if prec.startswith("int8"):
         kw.update(data=str(calib), split="val")
     out = YOLO(str(local), task="detect").export(**kw)
     if not out:
@@ -223,12 +230,15 @@ def export_target(pt: Path, fmt_: str, prec: str, cfg: dict, images: list[Path],
     if fmt_ == "tflite":
         # onnx2tf writes several .tflite files; Ultralytics returns the saved_model folder.
         folder = produced if produced.is_dir() else produced.parent
-        want = {"fp32": "_float32.tflite", "fp16": "_float16.tflite", "int8": "_int8.tflite"}[prec]
+        want = {"fp32": "_float32.tflite", "fp16": "_float16.tflite", "int8": "_int8.tflite",
+                "int8static": "_integer_quant.tflite"}[prec]
         hits = sorted(folder.glob(f"*{want}"))
         if not hits:
             raise RuntimeError(f"No *{want} in {folder}: {sorted(p.name for p in folder.glob('*.tflite'))}")
         produced = hits[0]
         info["tflite_file"] = produced.name
+        if prec == "int8static":
+            info["note"] = "onnx2tf full integer quantisation (per-tensor), float32 input and output"
         if prec == "int8":
             info["note"] = ("Ultralytics 8.3.21 renames onnx2tf's *_dynamic_range_quant.tflite to *_int8.tflite: "
                             "int8 weights, float activations (dynamic-range quantisation), calibration data unused")
@@ -263,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m ppe.export", description=__doc__.split("\n\n")[0])
     ap.add_argument("--config", required=True, help="export YAML, e.g. configs/export/p3_export_yolo11s.yaml")
     ap.add_argument("--only", nargs="+", help="targets to build, e.g. onnx_int8 tflite_fp16")
+    ap.add_argument("--skip-existing", action="store_true",
+                    help="do not rebuild an export already on disk; record its size and sha256 only")
     args = ap.parse_args(argv)
     cfg_path = Path(args.config)
     with (cfg_path if cfg_path.is_absolute() else REPO_ROOT / cfg_path).open(encoding="utf-8") as fh:
@@ -290,10 +302,16 @@ def main(argv: list[str] | None = None) -> int:
     run_id = f"{cfg['run_name']}_{stamp.strftime('%Y%m%dT%H%M%SZ')}"
     command = "python -m ppe.export " + " ".join(shlex.quote(a) for a in (argv if argv is not None else sys.argv[1:]))
     work_root = Path(tempfile.mkdtemp(prefix="ppe_export_"))
-    images = calibration_images(cfg) if any(t.endswith("int8") for t in targets) else []
-    calib = calibration_yaml(cfg, images, work_root / "calib") if images else None
     cal = cfg["calibration"]
-    cal_note = (f"INT8 calibration: {len(images)} images drawn with seed {cal['seed']} from {cal['data']} "
+    images = calibration_images(cfg) if any("int8" in t for t in targets) else []
+    calib = calibration_yaml(cfg, images, work_root / "calib") if images else None
+    # onnx2tf holds every calibration image in memory as float32 (300 at 640 px ran out of 15 GB here),
+    # so TFLite may use the first n_images_tflite of the same seeded draw.
+    images_tfl = calibration_images(cfg, cal.get("n_images_tflite")) if images else []
+    calib_tfl = calibration_yaml(cfg, images_tfl, work_root / "calib_tflite") if images else None
+
+    def cal_note_for(imgs):
+        return (f"INT8 calibration: {len(imgs)} images drawn with seed {cal['seed']} from {cal['data']} "
                 f"split {cal['split']} (never test)")
 
     manifest_path = out_dir / "manifest.json"
@@ -313,29 +331,38 @@ def main(argv: list[str] | None = None) -> int:
         dest = target_path(out_dir, stem, f, p)
         print(f"[{t}] exporting to {dest.relative_to(REPO_ROOT)} ...", flush=True)
         t0 = time.perf_counter()
-        try:
-            info = export_target(pt, f, p, cfg, images, calib, dest, work_root / t)
-        except (Exception, SystemExit) as e:   # one failing exporter must not stop the others
-            print(f"[{t}] FAILED: {e}", flush=True)
-            skipped.append((t, f"export failed: {e}"))
-            continue
+        if args.skip_existing and dest.exists():
+            info, cal_note = {"rebuilt": "no, existing file recorded"}, ""
+            if "int8" in p:
+                cal_note = cal_note_for(images_tfl if f == "tflite" else images) + " (as configured; file not rebuilt)"
+        else:
+            try:
+                tfl = f == "tflite"
+                info = export_target(pt, f, p, cfg, images_tfl if tfl else images, calib_tfl if tfl else calib,
+                                     dest, work_root / t)
+                cal_note = cal_note_for(images_tfl if tfl else images)
+            except (Exception, SystemExit) as e:   # one failing exporter must not stop the others
+                print(f"[{t}] FAILED: {e}", flush=True)
+                skipped.append((t, f"export failed: {e}"))
+                continue
         secs = time.perf_counter() - t0
         digest = sha256_path(dest)
         manifest[t] = {"path": dest.relative_to(REPO_ROOT).as_posix(), "sha256": digest, "size_mb": round(size_mb(dest), 3),
-                       "source": base["weights"], "run_id": run_id, "calibration": cal_note if p == "int8" else "",
+                       "source": base["weights"], "run_id": run_id, "calibration": cal_note if "int8" in p else "",
                        **info}
         notes = f"{dest.relative_to(REPO_ROOT).as_posix()}@{digest[:12]}; export {secs:.0f} s"
-        if p == "int8":
+        if "int8" in p and not (f == "tflite" and p == "int8"):
             notes += f"; {cal_note}"
         if info:
             notes += "; " + "; ".join(f"{k}: {v}" for k, v in info.items())
-        rows.append({**base, "precision_mode": t, "split": cal["split"] if p == "int8" else "",
-                     "metric": "model_size_mb", "value": fmt(size_mb(dest)), "n": 1, "notes": notes})
+        row = {**base, "precision_mode": t, "split": cal["split"] if "int8" in p else "",
+               "metric": "model_size_mb", "value": fmt(size_mb(dest)), "n": 1, "notes": notes}
+        rows.append(row)
+        append_rows([row])                 # written as each export finishes: a later crash keeps it
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"[{t}] ok, {size_mb(dest):.1f} MB, {secs:.0f} s", flush=True)
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     shutil.rmtree(work_root, ignore_errors=True)
     if rows:
-        append_rows(rows)
         print(f"\nAppended {len(rows)} rows to results/results.csv as run {run_id}; manifest {manifest_path.relative_to(REPO_ROOT)}")
     for t, why in skipped:
         print(f"  not built: {t}: {why}")

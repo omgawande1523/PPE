@@ -25,6 +25,7 @@ models:
   tflite_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32.tflite}
   tflite_fp16:   {weights: weights/export/yolo11s/yolo11s_fp16.tflite}
   tflite_int8:   {weights: weights/export/yolo11s/yolo11s_int8.tflite}
+  tflite_int8static: {weights: weights/export/yolo11s/yolo11s_int8static.tflite}
   onnx_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32.onnx}
   onnx_int8:     {weights: weights/export/yolo11s/yolo11s_int8.onnx}
   pytorch_fp32:  {weights: weights/best.pt}

@@ -28,6 +28,7 @@ models:
   ncnn_fp16:     {weights: weights/export/yolo11s/yolo11s_fp16_ncnn_model, only: [none]}
   tflite_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32.tflite, only: [none]}
   tflite_int8:   {weights: weights/export/yolo11s/yolo11s_int8.tflite}
+  tflite_int8static: {weights: weights/export/yolo11s/yolo11s_int8static.tflite}
 
 # [reference, candidate]
 comparisons:
@@ -40,3 +41,4 @@ comparisons:
   - [onnx_fp32, ncnn_fp16]          # clean only
   - [onnx_fp32, tflite_fp32]        # clean only
   - [onnx_fp32, tflite_int8]        # TFLite dynamic-range INT8 (what Ultralytics 8.3.21 calls int8)
+  - [onnx_fp32, tflite_int8static]  # TFLite full-integer INT8
