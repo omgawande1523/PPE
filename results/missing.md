@@ -32,6 +32,18 @@ The shift command evaluates whatever is on disk, so after any of the steps below
 
 Both are browser downloads (Kaggle needs a free account); evaluation needs no GPU.
 
+## Phase 3: edge boards, TFLite INT8, TensorRT, YOLO11n
+
+Measured on the cloud CPU only (`results/phase3_edge.md`). Board procedure: `docs/edge_boards.md`.
+
+| Result | Why it is missing | Command |
+|---|---|---|
+| Raspberry Pi 4/5 speed, memory, energy | no board in the cloud | `python -m ppe.bench --config configs/bench/p3_bench_pi5.yaml` (or `p3_bench_pi4.yaml`), then `python -m ppe.bench --energy RUN_ID --power-log meter.csv` |
+| Pi accuracy of NCNN FP16 / TFLite (ARM numerics) | needs the board | `python -m ppe.quant --config configs/quant/p3_quant_pi.yaml --device-label pi5_8gb` |
+| Jetson TensorRT FP16/INT8: build, accuracy, shift widening, speed, energy | TensorRT needs an NVIDIA GPU | `python -m ppe.export --config configs/export/p3_export_jetson.yaml`; `python -m ppe.quant --config configs/quant/p3_quant_jetson.yaml --device-label jetson_orin_nano_8gb_maxn`; `python -m ppe.bench --config configs/bench/p3_bench_jetson_orin_nano.yaml` |
+| TFLite INT8 (dynamic-range and full-integer) | onnx2tf INT8 conversion killed for memory (~13-14 GB) on the 15 GB VM | on a machine with more RAM: `python -m ppe.export --config configs/export/p3_export_yolo11s.yaml --only tflite_int8 tflite_int8static`, then `python -m ppe.quant --config configs/quant/p3_quant_yolo11s.yaml --model tflite_int8 tflite_int8static` and `--compare` |
+| Every YOLO11n Phase 3 row | YOLO11n not trained yet (Phase 1 above) | `python -m ppe.export --config configs/export/p3_export_yolo11n.yaml`, then quant and bench configs pointed at the YOLO11n exports |
+
 ## Later phases
 
-Edge speed, memory and energy (Phase 3) and everything after: not started.
+Phase 4 (monitor) and everything after: not started.
