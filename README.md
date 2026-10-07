@@ -15,7 +15,7 @@ cp .env.example .env        # Windows: copy .env.example .env   (only needed for
 ```
 
 The baseline detector is committed at `weights/best.pt` (YOLO11s, 11 classes, trained with Ultralytics 8.3.21).
-Datasets are not committed; see `datasets/README.md`.
+Datasets are not committed; get Construction-PPE (checksum-verified) with `python -m ppe.data --download construction-ppe`. See `datasets/README.md`.
 
 ## Run inference
 
@@ -29,6 +29,16 @@ python -m ppe.infer --source path/to/images/ --save-dir runs/annotated
 Settings come from `configs/infer_default.yaml`; pass another file with `--config`.
 Each run writes `runs/logs/run_<UTC time>.jsonl`: a `run_start` line (config, weights, thresholds, class names, git commit), one `frame` line per frame, and a `run_end` line.
 A frame line holds every detection (class, confidence, box, track ID), the per-person decisions, and the orphan PPE boxes that no person box contains.
+
+## Evaluate a model
+
+```bash
+python -m ppe.eval --config configs/eval/baseline_yolo11s_test.yaml
+```
+
+Evaluates val and test in one run and appends rows to `results/results.csv`: per-class mAP (Ultralytics protocol), per-class precision/recall/F1 at an operating confidence chosen on val only, person-level violation recall and false-alert rate, and bootstrap 95% intervals.
+PR curves and confusion matrices go to `results/figures/<run_id>/`. The test split is golden set v1 and is hash-checked first (`golden/README.md`).
+Retraining (Colab T4): `python -m ppe.train --config configs/train/p1_yolo11s_seed0.yaml`, or `notebooks/colab_phase1_train.ipynb`.
 
 ## Run the dashboard
 
@@ -58,7 +68,8 @@ Tests: `python -m pytest tests`.
 configs/    one YAML per experiment
 datasets/   construction-ppe, sh17, chv, own_site (git-ignored)
 golden/     frozen golden set manifests (file lists + hashes)
-ppe/        infer.py, associate.py, logging.py (Phase 0); later phases add eval, shift, export, bench, signals, ...
+ppe/        infer.py, associate.py, logging.py (Phase 0); data.py, golden.py, eval.py, train.py (Phase 1); later: shift, export, bench, signals, ...
+notebooks/  Colab notebooks (training only)
 tests/      python -m pytest tests
 ppe/alerts/ Twilio alerting and deduplication
 app/        Flask dashboard, calling ppe.infer
@@ -69,5 +80,5 @@ paper/
 
 ## Results status
 
-`results/results.csv` has its header only. No result has been measured in this repository yet.
-The validation mAP@0.5 of 0.639 comes from the training notebook and is a validation-split number; the test split has not been evaluated (Phase 1).
+Phase 1 baseline is measured: `results/phase1_baseline.md` summarises it. On the test split best.pt scores mAP@0.5 0.570 (val 0.639, reproduced exactly by `ppe.eval`).
+Results not yet measured, with the command for each, are listed in `results/missing.md`.

@@ -576,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--config", help="eval YAML, e.g. configs/eval/baseline_yolo11s_test.yaml")
     ap.add_argument("--weights", help="override the weights in the config (path relative to the repo root)")
     ap.add_argument("--run-name", help="override run_name (use with --weights)")
+    ap.add_argument("--model", help="override the model label, e.g. yolo11n (use with --weights)")
     ap.add_argument("--compare", nargs=2, metavar="RUN_ID", help="check two runs in results.csv are identical")
     args = ap.parse_args(argv)
     if args.compare:
@@ -591,6 +592,8 @@ def main(argv: list[str] | None = None) -> int:
         cfg["weights"] = Path(args.weights).as_posix()
     if args.run_name:
         cfg["run_name"] = args.run_name
+    if args.model:
+        cfg["model"] = args.model
     command = "python -m ppe.eval " + " ".join(shlex.quote(a) for a in (argv if argv is not None else sys.argv[1:]))
     rows = evaluate(cfg, command)
     append_rows(rows)

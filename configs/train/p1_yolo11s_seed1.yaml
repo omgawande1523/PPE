@@ -1,0 +1,13 @@
+# Phase 1 seed-variance run: YOLO11s, seed 1. Same recipe as the training notebook.
+# Run on Colab T4: python -m ppe.train --config configs/train/p1_yolo11s_seed1.yaml
+run_name: p1_yolo11s_seed1
+model: yolo11s.pt            # COCO-pretrained, downloaded by Ultralytics
+ultralytics_version: "8.3.21"
+data: configs/data/construction_ppe.yaml
+epochs: 50
+imgsz: 640
+batch: 16
+seed: 1
+deterministic: true           # Ultralytics default; GPU kernels can still differ slightly between runs
+device: 0
+workers: 2
