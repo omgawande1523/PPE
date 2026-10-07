@@ -8,6 +8,7 @@ weights/*.pt
 !weights/best.pt
 weights/*.onnx
 weights/*.engine
+weights/export/
 runs/
 
 # Python
@@ -21,3 +22,4 @@ venv/
 *.egg-info/
 .ipynb_checkpoints/
 /*.pt
+calibration_image_sample_data_*.npy

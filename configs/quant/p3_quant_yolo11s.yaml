@@ -1,0 +1,42 @@
+# Phase 3: does quantisation widen the site-shift drop? YOLO11s (best.pt).
+# Run (from the repository root), after python -m ppe.export --config configs/export/p3_export_yolo11s.yaml:
+#   python -m ppe.quant --config configs/quant/p3_quant_yolo11s.yaml
+#
+# Every model is evaluated on the Phase 2 cells (same seeded corruptions of golden set v1)
+# at the Phase 1 operating confidence 0.28 (chosen on val). Nothing is re-tuned per model:
+# not the threshold, not the corruptions. INT8 models were calibrated on train images only.
+
+run_name: p3_quant_yolo11s
+phase: 3
+model: yolo11s
+shift_config: configs/shift/p2_shift_yolo11s.yaml   # cells, conf, seed, bootstrap
+export_config: configs/export/p3_export_yolo11s.yaml
+bootstrap: 1000
+
+# Exported models run at a fixed 640x640 input, batch 1 (square letterbox). PyTorch
+# letterboxes to the smallest stride multiple instead, so pytorch_fp32 -> onnx_fp32
+# isolates the export itself; quantisation is judged within one runtime.
+# 'only: [none]' evaluates the clean reference only (an FP32 equivalence check, not a full table).
+models:
+  pytorch_fp32:  {weights: weights/best.pt, batch: 16}
+  onnx_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32.onnx}
+  onnx_int8:     {weights: weights/export/yolo11s/yolo11s_int8.onnx}
+  openvino_fp32: {weights: weights/export/yolo11s/yolo11s_fp32_openvino_model, only: [none]}
+  openvino_fp16: {weights: weights/export/yolo11s/yolo11s_fp16_openvino_model}
+  openvino_int8: {weights: weights/export/yolo11s/yolo11s_int8_openvino_model}
+  ncnn_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32_ncnn_model, only: [none]}
+  ncnn_fp16:     {weights: weights/export/yolo11s/yolo11s_fp16_ncnn_model, only: [none]}
+  tflite_fp32:   {weights: weights/export/yolo11s/yolo11s_fp32.tflite, only: [none]}
+  tflite_int8:   {weights: weights/export/yolo11s/yolo11s_int8.tflite}
+
+# [reference, candidate]
+comparisons:
+  - [pytorch_fp32, onnx_fp32]       # export only (graph + square letterbox), no quantisation
+  - [onnx_fp32, onnx_int8]          # ONNX Runtime static INT8
+  - [onnx_fp32, openvino_int8]      # OpenVINO NNCF INT8 (OpenVINO FP32 = ONNX FP32 graph; checked by openvino_fp32)
+  - [onnx_fp32, openvino_fp16]
+  - [onnx_fp32, openvino_fp32]      # clean only: equivalence check
+  - [onnx_fp32, ncnn_fp32]          # clean only
+  - [onnx_fp32, ncnn_fp16]          # clean only
+  - [onnx_fp32, tflite_fp32]        # clean only
+  - [onnx_fp32, tflite_int8]        # TFLite dynamic-range INT8 (what Ultralytics 8.3.21 calls int8)

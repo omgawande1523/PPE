@@ -1,0 +1,17 @@
+# Phase 3 export and benchmark extras, on top of requirements.txt. Versions that ran on 2026-10-07
+# (Python 3.13, x86_64). On a Raspberry Pi install only the runtime it benchmarks (see docs/edge_boards.md).
+-r requirements.txt
+onnx==1.23.2
+onnxruntime==1.30.0          # ONNX FP32 and the static INT8 build
+onnxslim==0.1.97
+openvino==2025.1.0           # Ultralytics 8.3.21 imports openvino.runtime, removed in 2026.x
+nncf==2.16.0                 # OpenVINO INT8
+ncnn==1.0.20260526
+pnnx==20260526
+tensorflow==2.20.0           # TFLite export (onnx2tf); not needed to run a .tflite on the Pi
+tf_keras==2.20.1
+onnx2tf==1.22.3              # Ultralytics 8.3.21 requires <=1.22.3
+sng4onnx==2.0.1
+onnx_graphsurgeon==0.6.1
+flatbuffers==25.12.19
+psutil==7.2.2                # peak memory on Windows

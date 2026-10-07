@@ -1,0 +1,24 @@
+# Phase 3: the same exports for YOLO11n, once the Colab retrain exists (results/missing.md, Phase 1).
+# Run: python -m ppe.export --config configs/export/p3_export_yolo11n.yaml
+
+run_name: p3_export_yolo11n
+phase: 3
+model: yolo11n
+weights: runs/train/p1_yolo11n_seed0/weights/best.pt
+missing_hint: "YOLO11n is not trained yet: run notebooks/colab_phase1_train.ipynb (or python -m ppe.train --config configs/train/p1_yolo11n_seed0.yaml) and copy best.pt to this path."
+stem: yolo11n
+ultralytics_version: "8.3.21"
+out_dir: weights/export/yolo11n
+imgsz: 640
+device: cpu
+seed: 0
+
+calibration:
+  data: configs/data/construction_ppe.yaml
+  dataset: construction-ppe
+  split: train
+  n_images: 300
+  seed: 0
+
+targets: [onnx_fp32, onnx_int8, openvino_fp32, openvino_fp16, openvino_int8, ncnn_fp32, ncnn_fp16,
+          tflite_fp32, tflite_fp16, tflite_int8, engine_fp16, engine_int8]
