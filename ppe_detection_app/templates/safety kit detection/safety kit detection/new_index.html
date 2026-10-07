@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RISKGUARD AI - Workplace Safety Detection</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3633f1;
+            --primary-dark: #ee4a1d;
+            --secondary: hsl(21, 79%, 49%);
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f8fafc;
+            --dark: #1e293b;
+            --gray: #64748b;
+            --gray-light: #e2e8f0;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background-color: #0f172a;
+            color: white;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        section {
+            padding: 80px 0;
+        }
+
+        /* Header & Navigation */
+        header {
+            background-color: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        header.scrolled {
+            padding: 5px 0;
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+            display: flex;
+            align-items: center;
+        }
+
+        .logo i {
+            margin-right: 8px;
+            color: var(--primary);
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+        }
+
+        .nav-links li {
+            margin-left: 30px;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: white;
+            font-weight: 500;
+            transition: color 0.3s;
+            position: relative;
+        }
+
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: -5px;
+            left: 0;
+            background-color: var(--primary);
+            transition: width 0.3s ease;
+        }
+
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        .mobile-menu {
+            display: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: white;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), 
+                        url('https://img.freepik.com/free-photo/construction-workers-collaborating-blueprints-construction-site_23-2152006117.jpg?semt=ais_hybrid&w=740&q=80');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: white;
+            padding: 150px 0 100px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-content {
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+            line-height: 1.2;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid white;
+            margin-left: 15px;
+        }
+
+        .btn-outline:hover {
+            background-color: white;
+            color: var(--primary);
+        }
+
+        /* Stats Section */
+        .stats {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            padding: 60px 0;
+            text-align: center;
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 30px;
+        }
+
+        .stat-item {
+            padding: 20px;
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        /* About Section */
+        .section-title {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .section-title h2 {
+            font-size: 2.5rem;
+            color: white;
+            margin-bottom: 15px;
+            position: relative;
+            display: inline-block;
+        }
+
+        .section-title h2::after {
+            content: '';
+            position: absolute;
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 2px;
+        }
+
+        .section-title p {
+            color: var(--gray);
+            max-width: 700px;
+            margin: 20px auto 0;
+        }
+
+        .about-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+
+        .about-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            z-index: 1;
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .about-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+
+        .about-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .about-card i {
+            font-size: 2.5rem;
+            color: var(--primary);
+            margin-bottom: 20px;
+        }
+
+        .about-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: white;
+        }
+
+        /* Features Section */
+        .features {
+            background-color: #1e293b;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .feature-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            color: white;
+            font-size: 2rem;
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3);
+        }
+
+        /* Live Camera Section */
+        .live-camera {
+            background: linear-gradient(rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.8)), 
+                        url('https://images.unsplash.com/photo-1581094794329-c8112a89af12?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: white;
+            text-align: center;
+            position: relative;
+        }
+
+        .live-camera .section-title h2 {
+            color: white;
+        }
+
+        .camera-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: center;
+            margin-top: 40px;
+        }
+
+        .camera-feed {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+        }
+
+        .camera-placeholder {
+            width: 100%;
+            min-height: 300px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #videoStream {
+            width: 100%;
+            height: auto;
+            min-height: 300px;
+            border-radius: 10px;
+            background-color: rgba(0, 0, 0, 0.3);
+        }
+
+        .detection-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .detection-box {
+            position: absolute;
+            border: 2px solid var(--accent);
+            background-color: rgba(16, 185, 129, 0.2);
+            border-radius: 5px;
+            padding: 5px;
+            font-size: 0.8rem;
+            color: white;
+        }
+
+        .detection-box.warning {
+            border-color: var(--warning);
+            background-color: rgba(245, 158, 11, 0.2);
+        }
+
+        .detection-box.danger {
+            border-color: var(--danger);
+            background-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .alert-panel {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            text-align: left;
+            border: 1px solid var(--card-border);
+        }
+
+        .alert-panel h3 {
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+
+        .alert-panel h3 i {
+            margin-right: 10px;
+            color: var(--warning);
+        }
+
+        .alert-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .alert-item i {
+            font-size: 1.2rem;
+            margin-right: 10px;
+        }
+
+        .alert-item.warning i {
+            color: var(--warning);
+        }
+
+        .alert-item.danger i {
+            color: var(--danger);
+        }
+
+        .alert-item.info i {
+            color: var(--accent);
+        }
+
+        .alert-time {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-left: auto;
+        }
+
+        /* Demo Section */
+        .demo-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: center;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--gray-light);
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            background-color: var(--card-bg);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary);
+            transform: translateY(-5px);
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            color: var(--gray);
+            margin-bottom: 20px;
+        }
+
+        .upload-area p {
+            margin-bottom: 20px;
+            color: var(--gray);
+        }
+
+        .results-area {
+            background-color: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .result-placeholder {
+            height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            color: var(--gray);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .detection-results {
+            margin-top: 20px;
+        }
+
+        .result-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .result-item:hover {
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .result-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            color: white;
+        }
+
+        .detected {
+            background-color: var(--accent);
+        }
+
+        .not-detected {
+            background-color: var(--danger);
+        }
+
+        /* Team Section */
+        .team {
+            background-color: #1e293b;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .team-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease;
+            position: relative;
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .team-card:hover {
+            transform: translateY(-10px);
+        }
+
+        .team-img {
+            height: 200px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .team-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .team-info {
+            padding: 20px;
+        }
+
+        .team-info h3 {
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+            color: white;
+        }
+
+        .team-info .role {
+            color: var(--primary);
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        /* Contact Section */
+        .contact-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+        }
+
+        .contact-form {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: white;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+            background-color: rgba(0, 0, 0, 0.3);
+            color: white;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        textarea.form-control {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        .contact-info {
+            padding: 20px 0;
+        }
+
+        .contact-info h3 {
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .social-links {
+            display: flex;
+            margin-top: 20px;
+        }
+
+        .social-links a {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            background-color: var(--primary);
+            color: white;
+            border-radius: 50%;
+            margin-right: 15px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .social-links a:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-3px);
+        }
+
+        /* Footer */
+        footer {
+            background-color: #0f172a;
+            color: white;
+            padding: 60px 0 20px;
+            border-top: 1px solid var(--card-border);
+        }
+
+        .footer-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+
+        .footer-col h3 {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            position: relative;
+            padding-bottom: 10px;
+            color: white;
+        }
+
+        .footer-col h3::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 40px;
+            height: 2px;
+            background-color: var(--accent);
+        }
+
+        .footer-links {
+            list-style: none;
+        }
+
+        .footer-links li {
+            margin-bottom: 10px;
+        }
+
+        .footer-links a {
+            color: #cbd5e1;
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+
+        .footer-links a:hover {
+            color: white;
+        }
+
+        .copyright {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 1px solid #334155;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        /* Alert Notification */
+        .alert-notification {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            background-color: #1e293b;
+            border-left: 4px solid var(--danger);
+            border-radius: 8px;
+            padding: 15px 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            z-index: 1001;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+            color: white;
+        }
+
+        .alert-notification.show {
+            transform: translateX(0);
+        }
+
+        .alert-notification i {
+            font-size: 1.5rem;
+            color: var(--danger);
+            margin-right: 10px;
+        }
+
+        .alert-notification.warning {
+            border-left-color: var(--warning);
+        }
+
+        .alert-notification.warning i {
+            color: var(--warning);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 992px) {
+            .demo-container, .contact-container, .camera-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                width: 100%;
+                background-color: #0f172a;
+                flex-direction: column;
+                padding: 20px;
+                box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+            }
+            
+            .nav-links.active {
+                display: flex;
+            }
+            
+            .nav-links li {
+                margin: 10px 0;
+            }
+            
+            .mobile-menu {
+                display: block;
+            }
+            
+            .hero {
+                padding: 120px 0 80px;
+            }
+            
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            section {
+                padding: 60px 0;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .btn {
+                display: block;
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            .btn-outline {
+                margin-left: 0;
+            }
+            
+            .hero h1 {
+                font-size: 1.8rem;
+            }
+            
+            .section-title h2 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header & Navigation -->
+    <header id="header">
+        <div class="container">
+            <nav>
+                <div class="logo">
+                    <i class="fas fa-shield-alt"></i>
+                    RISKGUARD AI
+                </div>
+                <ul class="nav-links">
+                    <li><a href="#home">Home</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#live-camera">Live Demo</a></li>
+                    <li><a href="#demo">Try Model</a></li>
+                    <li><a href="#team">Team</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                </ul>
+                <div class="mobile-menu">
+                    <i class="fas fa-bars"></i>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Alert Notification -->
+    <div class="alert-notification" id="alertNotification">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div>
+            <strong>Safety Violation Detected!</strong>
+            <p>Worker without helmet detected in Zone A</p>
+        </div>
+    </div>
+
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1>Ensuring Safety Through AI</h1>
+                <p>An intelligent system that detects essential safety gear in real-time, protecting workers in industrial and construction environments.</p>
+                <div>
+                    <a href="#live-camera" class="btn">Live Demo</a>
+                    <a href="#about" class="btn btn-outline">Learn More</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats">
+        <div class="container">
+            <div class="stats-container">
+                <div class="stat-item">
+                    <span class="stat-number" id="stat1">0</span>
+                    <span class="stat-label">Detection Accuracy</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="stat2">0</span>
+                    <span class="stat-label">Safety Violations Prevented</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="stat3">0</span>
+                    <span class="stat-label">Workplaces Protected</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="stat4">0</span>
+                    <span class="stat-label">Response Time (ms)</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="about">
+        <div class="container">
+            <div class="section-title">
+                <h2>About the Model</h2>
+                <p>Leveraging cutting-edge computer vision to revolutionize workplace safety</p>
+            </div>
+            <div class="about-content">
+                <div class="about-card">
+                    <i class="fas fa-brain"></i>
+                    <h3>AI-Powered Detection</h3>
+                    <p>Our advanced neural network analyzes video feeds in real-time to identify safety equipment like helmets, gloves, and jackets with high accuracy.</p>
+                </div>
+                <div class="about-card">
+                    <i class="fas fa-bolt"></i>
+                    <h3>Real-Time Processing</h3>
+                    <p>Instant detection and alerts enable immediate response to safety violations, preventing accidents before they happen.</p>
+                </div>
+                <div class="about-card">
+                    <i class="fas fa-shield-alt"></i>
+                    <h3>Enhanced Safety</h3>
+                    <p>Automated monitoring ensures consistent safety compliance, reducing workplace injuries and creating a culture of safety awareness.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-title">
+                <h2>Key Features</h2>
+                <p>Comprehensive safety monitoring powered by advanced AI technology</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-helmet-safety"></i>
+                    </div>
+                    <h3>Multi-Equipment Detection</h3>
+                    <p>Simultaneously detects helmets, safety vests, gloves, and protective eyewear</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-video"></i>
+                    </div>
+                    <h3>Live Monitoring</h3>
+                    <p>Real-time video analysis with instant safety status updates</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <h3>Instant Alerts</h3>
+                    <p>Immediate notifications when safety violations are detected</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-chart-bar"></i>
+                    </div>
+                    <h3>Analytics Dashboard</h3>
+                    <p>Track compliance rates and generate detailed safety reports</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Live Camera Section -->
+    <section id="live-camera" class="live-camera">
+        <div class="container">
+            <div class="section-title">
+                <h2>Live Safety Monitoring</h2>
+                <p>Real-time detection of safety equipment with instant alerts</p>
+            </div>
+            <div class="camera-container">
+                <div class="camera-feed">
+                    <h3>Live Camera Feed</h3>
+                    <div class="camera-placeholder" style="position: relative; min-height: 300px;">
+                        <img src="" id="videoStream" alt="Live Camera Feed" style="width: 100%; height: auto; min-height: 300px; object-fit: cover; border-radius: 10px; display: none;">
+                        <div id="cameraPlaceholder" style="display: flex; align-items: center; justify-content: center; min-height: 300px; width: 100%;">
+                            <i class="fas fa-video" style="font-size: 3rem; opacity: 0.5;"></i>
+                        </div>
+                        <div class="detection-overlay" id="detectionOverlay">
+                            <!-- Detection boxes will be added here dynamically -->
+                        </div>
+                    </div>
+                    <button class="btn" id="startCamera" style="width: 100%; margin-top: 10px;">
+                        <i class="fas fa-play"></i> Start Live Monitoring
+                    </button>
+                </div>
+                <div class="alert-panel">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Safety Alerts</h3>
+                    <div class="alert-list" id="alertList">
+                        <p style="text-align: center; color: var(--gray); padding: 20px;">No alerts yet. Start monitoring to see real-time detections.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo">
+        <div class="container">
+            <div class="section-title">
+                <h2>Try the Model</h2>
+                <p>Upload an image or video to see the AI in action</p>
+            </div>
+            <div class="demo-container">
+                <div class="upload-area">
+                    <div class="upload-icon">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </div>
+                    <h3>Upload Media</h3>
+                    <p>Click to upload. Support for images (PNG, JPG, JPEG)</p>
+                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    <button class="btn" id="chooseFileBtn">Choose File</button>
+                    <p id="fileName" style="margin-top: 10px; color: var(--gray); font-size: 0.9rem;"></p>
+                    <button class="btn" id="runDetectionBtn" style="width: 100%; margin-top: 10px; display: none;">
+                        <i class="fas fa-search"></i> Run Detection
+                    </button>
+                </div>
+                <div class="results-area">
+                    <h3>Detection Results</h3>
+                    <div class="result-placeholder" id="resultPlaceholder">
+                        <p>Upload and run detection to see results here</p>
+                    </div>
+                    <div id="annotatedImageContainer" style="display: none; margin-bottom: 20px;">
+                        <img id="annotatedImage" src="" alt="Detection Result" style="width: 100%; border-radius: 10px; max-height: 400px; object-fit: contain;">
+                    </div>
+                    <div class="detection-results" id="detectionResults" style="display: none;">
+                        <!-- Results will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Team Section -->
+    <section id="team" class="team">
+        <div class="container">
+            <div class="section-title">
+                <h2>Meet the Team</h2>
+                <p>The brilliant minds behind the Safety Kit Detection Model</p>
+            </div>
+            <div class="team-grid">
+                <div class="team-card">
+                    <div class="team-img">
+                        <img src="{{ url_for('team_images', filename='1751899731587.png') }}" alt="PRITISH MANWATKAR">
+                    </div>
+                    <div class="team-info">
+                        <h3>PRITISH MANWATKAR</h3>
+                        <div class="role">Project Lead & ML Engineer</div>
+                        <p>Specialized in computer vision and deep learning architectures</p>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <div class="team-img">
+                        <img src="{{ url_for('team_images', filename='WhatsApp Image 2025-11-03 at 23.07.35_0723f2b5.jpg') }}" alt="VEDANT BUTLE">
+                    </div>
+                    <div class="team-info">
+                        <h3>VEDANT </h3>
+                        <h3>BUTLE</h3>
+                        <div class="role">Full Stack Developer</div>
+                        <p>Built the web interface and real-time detection pipeline</p>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <div class="team-img">
+                        <img src="{{ url_for('team_images', filename='WhatsApp Image 2025-11-03 at 23.30.09_8c2e6b0b.jpg') }}" alt="PURUSHOTTOM BENDE">
+                    </div>
+                    <div class="team-info">
+                        <h3>PURUSHOTTOM BENDE</h3>
+                        <div class="role">Data Scientist</div>
+                        <p>Expert in dataset curation and model optimization</p>
+                    </div>
+                </div>
+                <div class="team-card">
+                    <div class="team-img">
+                        <img src="{{ url_for('team_images', filename='WhatsApp Image 2025-11-04 at 17.57.19_150198a5.jpg') }}" alt="DNYANDA THORAT">
+                    </div>
+                    <div class="team-info">
+                        <h3>DNYANDA </h3>
+                        <h3>THORAT</h3>
+                        <div class="role">Researcher</div>
+                        <p>Gathering, Analyzing, & Interpreting data to solve problems</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact">
+        <div class="container">
+            <div class="section-title">
+                <h2>Get in Touch</h2>
+                <p>Have questions? We'd love to hear from you</p>
+            </div>
+            <div class="contact-container">
+                <div class="contact-form">
+                    <form id="contactForm">
+                        <div class="form-group">
+                            <label for="name">Name</label>
+                            <input type="text" id="name" class="form-control" placeholder="Your name">
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" class="form-control" placeholder="your.email@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="message">Message</label>
+                            <textarea id="message" class="form-control" placeholder="Tell us about your inquiry..."></textarea>
+                        </div>
+                        <button type="submit" class="btn">Send Message</button>
+                    </form>
+                </div>
+                <div class="contact-info">
+                    <h3>Connect with us</h3>
+                    <p>Feel free to reach out with any questions about our Safety Kit Detection Model. We're here to help!</p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-linkedin-in"></i></a>
+                        <a href="#"><i class="fab fa-github"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fas fa-envelope"></i></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-col">
+                    <h3>RISKGUARD AI</h3>
+                    <p>Revolutionizing workplace safety through artificial intelligence and computer vision.</p>
+                </div>
+                <div class="footer-col">
+                    <h3>Quick Links</h3>
+                    <ul class="footer-links">
+                        <li><a href="#home">Home</a></li>
+                        <li><a href="#about">About</a></li>
+                        <li><a href="#features">Features</a></li>
+                        <li><a href="#live-camera">Live Demo</a></li>
+                        <li><a href="#demo">Try Model</a></li>
+                        <li><a href="#team">Team</a></li>
+                        <li><a href="#contact">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h3>Project Info</h3>
+                    <p>Major Project - Final Year</p>
+                    <p>Developed with passion for safer workplaces</p>
+                </div>
+            </div>
+            <div class="copyright">
+                <p>&copy; 2025 RISKGUARD AI. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Mobile menu toggle
+        document.querySelector('.mobile-menu').addEventListener('click', function() {
+            document.querySelector('.nav-links').classList.toggle('active');
+        });
+
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                
+                const targetId = this.getAttribute('href');
+                if(targetId === '#') return;
+                
+                const targetElement = document.querySelector(targetId);
+                if(targetElement) {
+                    window.scrollTo({
+                        top: targetElement.offsetTop - 80,
+                        behavior: 'smooth'
+                    });
+                    
+                    // Close mobile menu if open
+                    document.querySelector('.nav-links').classList.remove('active');
+                }
+            });
+        });
+
+        // Form submission
+        document.getElementById('contactForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Thank you for your message! We will get back to you soon.');
+            this.reset();
+        });
+
+        // Header scroll effect
+        window.addEventListener('scroll', function() {
+            const header = document.getElementById('header');
+            if (window.scrollY > 50) {
+                header.classList.add('scrolled');
+            } else {
+                header.classList.remove('scrolled');
+            }
+        });
+
+        // Animated statistics
+        function animateStats() {
+            const stat1 = document.getElementById('stat1');
+            const stat2 = document.getElementById('stat2');
+            const stat3 = document.getElementById('stat3');
+            const stat4 = document.getElementById('stat4');
+            
+            animateValue(stat1, 0, 98.7, 2000);
+            animateValue(stat2, 0, 342, 2000);
+            animateValue(stat3, 0, 3 , 2000);
+            animateValue(stat4, 0, 5, 2000);
+        }
+        
+        function animateValue(element, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const value = Math.floor(progress * (end - start) + start);
+                element.innerHTML = end === 98.7 ? value.toFixed(1) + "%" : value;
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+        
+        // Initialize stats animation when page loads
+        window.addEventListener('load', animateStats);
+
+        // Live Camera Feed
+        const startCameraBtn = document.getElementById('startCamera');
+        const videoStream = document.getElementById('videoStream');
+        const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+        const alertList = document.getElementById('alertList');
+        const alertNotification = document.getElementById('alertNotification');
+        
+        let isCameraActive = false;
+        let violationCheckInterval;
+        let lastViolationHash = '';
+        
+        startCameraBtn.addEventListener('click', function() {
+            if (!isCameraActive) {
+                // Start camera feed
+                isCameraActive = true;
+                startCameraBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+                startCameraBtn.disabled = true;
+                
+                // Set video stream source and show it
+                const videoFeedUrl = "{{ url_for('video_feed') }}";
+                videoStream.src = videoFeedUrl + '?t=' + new Date().getTime(); // Add timestamp to force reload
+                videoStream.style.display = 'block';
+                cameraPlaceholder.style.display = 'none';
+                
+                // Wait for image to load
+                videoStream.onload = function() {
+                    startCameraBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Live Monitoring';
+                    startCameraBtn.style.backgroundColor = '#ef4444';
+                    startCameraBtn.disabled = false;
+                    
+                    // Start checking for violations
+                    violationCheckInterval = setInterval(checkViolations, 2000); // Check every 2 seconds
+                };
+                
+                videoStream.onerror = function() {
+                    alert('Error: Could not load video feed. Please check if the camera is connected and the server is running.');
+                    isCameraActive = false;
+                    startCameraBtn.innerHTML = '<i class="fas fa-play"></i> Start Live Monitoring';
+                    startCameraBtn.style.backgroundColor = '';
+                    startCameraBtn.disabled = false;
+                    videoStream.style.display = 'none';
+                    cameraPlaceholder.style.display = 'flex';
+                };
+                
+            } else {
+                // Stop camera feed
+                isCameraActive = false;
+                startCameraBtn.innerHTML = '<i class="fas fa-play"></i> Start Live Monitoring';
+                startCameraBtn.style.backgroundColor = '';
+                
+                // Hide video stream and clear source
+                videoStream.src = '';
+                videoStream.style.display = 'none';
+                cameraPlaceholder.style.display = 'flex';
+                
+                // Stop checking violations
+                if (violationCheckInterval) {
+                    clearInterval(violationCheckInterval);
+                }
+            }
+        });
+        
+        async function checkViolations() {
+            try {
+                const response = await fetch('/violations');
+                const data = await response.json();
+                
+                if (data.violations && data.violations.length > 0) {
+                    const violation = data.violations[0];
+                    const violationHash = JSON.stringify(violation);
+                    
+                    // Only show new violations
+                    if (violationHash !== lastViolationHash) {
+                        lastViolationHash = violationHash;
+                        
+                        if (violation.missing && violation.missing.length > 0) {
+                            const missingItems = violation.missing.join(', ');
+                            showAlert('danger', 'Safety Violation Detected', 
+                                `Missing PPE: ${missingItems}`);
+                            
+                            // Update alert list
+                            updateAlertList(data.violations, data.history || []);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking violations:', error);
+            }
+        }
+        
+        function updateAlertList(violations, history) {
+            // Clear existing alerts (except placeholder)
+            const placeholder = alertList.querySelector('p');
+            if (placeholder) {
+                alertList.innerHTML = '';
+            }
+            
+            // Add current violations
+            violations.forEach(violation => {
+                if (violation.missing && violation.missing.length > 0) {
+                    const alertItem = document.createElement('div');
+                    alertItem.className = 'alert-item danger';
+                    
+                    const missingText = violation.missing.join(', ');
+                    const timeAgo = violation.timestamp ? 
+                        new Date(violation.timestamp).toLocaleTimeString() : 'Just now';
+                    
+                    alertItem.innerHTML = `
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div>
+                            <strong>Missing PPE Detected</strong>
+                            <p>${missingText}</p>
+                        </div>
+                        <span class="alert-time">${timeAgo}</span>
+                    `;
+                    
+                    alertList.insertBefore(alertItem, alertList.firstChild);
+                }
+            });
+            
+            // Keep only last 5 alerts
+            while (alertList.children.length > 5) {
+                alertList.removeChild(alertList.lastChild);
+            }
+        }
+        
+        // File Upload Functionality
+        const chooseFileBtn = document.getElementById('chooseFileBtn');
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const runDetectionBtn = document.getElementById('runDetectionBtn');
+        const resultPlaceholder = document.getElementById('resultPlaceholder');
+        const annotatedImageContainer = document.getElementById('annotatedImageContainer');
+        const annotatedImage = document.getElementById('annotatedImage');
+        const detectionResults = document.getElementById('detectionResults');
+        
+        chooseFileBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileName.textContent = `Selected: ${file.name}`;
+                runDetectionBtn.style.display = 'block';
+            }
+        });
+        
+        runDetectionBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file first');
+                return;
+            }
+            
+            // Show loading state
+            runDetectionBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            runDetectionBtn.disabled = true;
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Hide placeholder
+                    resultPlaceholder.style.display = 'none';
+                    
+                    // Show annotated image
+                    if (data.annotated_image) {
+                        annotatedImage.src = data.annotated_image;
+                        annotatedImageContainer.style.display = 'block';
+                    }
+                    
+                    // Display detection results
+                    displayDetectionResults(data);
+                    
+                    // Show alert if violations found
+                    if (data.has_violations && data.missing.length > 0) {
+                        showAlert('danger', 'Safety Violations Found', 
+                            `Missing: ${data.missing.join(', ')}`);
+                    } else if (data.detected.length > 0) {
+                        showAlert('info', 'All PPE Detected', 
+                            `Detected: ${data.detected.join(', ')}`);
+                    }
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to process image'));
+                }
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                alert('Error processing file. Please try again.');
+            } finally {
+                runDetectionBtn.innerHTML = '<i class="fas fa-search"></i> Run Detection';
+                runDetectionBtn.disabled = false;
+            }
+        });
+        
+        function displayDetectionResults(data) {
+            detectionResults.innerHTML = '';
+            detectionResults.style.display = 'block';
+            
+            // Show detected items
+            if (data.detected && data.detected.length > 0) {
+                data.detected.forEach(item => {
+                    const resultItem = document.createElement('div');
+                    resultItem.className = 'result-item';
+                    resultItem.innerHTML = `
+                        <div class="result-icon detected">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <div>
+                            <strong>${item.charAt(0).toUpperCase() + item.slice(1)}</strong> - Detected
+                        </div>
+                    `;
+                    detectionResults.appendChild(resultItem);
+                });
+            }
+            
+            // Show missing items
+            if (data.missing && data.missing.length > 0) {
+                data.missing.forEach(item => {
+                    const resultItem = document.createElement('div');
+                    resultItem.className = 'result-item';
+                    resultItem.innerHTML = `
+                        <div class="result-icon not-detected">
+                            <i class="fas fa-times"></i>
+                        </div>
+                        <div>
+                            <strong>${item.charAt(0).toUpperCase() + item.slice(1)}</strong> - Not Detected
+                        </div>
+                    `;
+                    detectionResults.appendChild(resultItem);
+                });
+            }
+            
+            if ((!data.detected || data.detected.length === 0) && 
+                (!data.missing || data.missing.length === 0)) {
+                const noResults = document.createElement('p');
+                noResults.textContent = 'No detections found in the image.';
+                noResults.style.color = 'var(--gray)';
+                noResults.style.textAlign = 'center';
+                noResults.style.padding = '20px';
+                detectionResults.appendChild(noResults);
+            }
+        }
+        
+        function showAlert(type, title, message) {
+            // Create alert item
+            const alertItem = document.createElement('div');
+            alertItem.className = `alert-item ${type}`;
+            
+            let icon = 'fa-info-circle';
+            if (type === 'danger') icon = 'fa-hard-hat';
+            if (type === 'warning') icon = 'fa-hands';
+            
+            const now = new Date();
+            const timeString = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+            
+            alertItem.innerHTML = `
+                <i class="fas ${icon}"></i>
+                <div>
+                    <strong>${title}</strong>
+                    <p>${message}</p>
+                </div>
+                <span class="alert-time">${timeString}</span>
+            `;
+            
+            // Add to alert list
+            alertList.insertBefore(alertItem, alertList.firstChild);
+            
+            // Show notification
+            alertNotification.querySelector('strong').textContent = title;
+            alertNotification.querySelector('p').textContent = message;
+            alertNotification.className = `alert-notification ${type} show`;
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                alertNotification.classList.remove('show');
+            }, 5000);
+            
+            // Remove old alerts if too many
+            if (alertList.children.length > 5) {
+                alertList.removeChild(alertList.lastChild);
+            }
+        }
+    </script>
+</body>
+</html>

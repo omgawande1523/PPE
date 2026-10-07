@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PPE Compliance Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🛡️ PPE Detection Dashboard</h1>
+        <div class="main-content">
+            <div class="video-section">
+                <img src="{{ url_for('video_feed') }}" id="video-stream" alt="Live CCTV Feed">
+            </div>
+
+            <div class="violations-section">
+                <h2>Detected Violations</h2>
+                <div id="violations-list" class="violations-list">
+                    <p>No violations detected yet 👷‍♂️</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

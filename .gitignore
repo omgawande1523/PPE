@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# YOLO runs
+runs/
+
+# Large files (exceed GitHub 100MB limit)
+datasets/construction-ppe.zip
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment / Secrets
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads (user-generated content)
+ppe_detection_app/uploads/
+
+# Results (generated output)
+results/
