@@ -235,28 +235,35 @@ def main(argv: list[str] | None = None) -> int:
         "git_commit": _git_commit(),
     }
     totals: Counter = Counter()
-    n = 0
     with RunLogger(_resolve(cfg.get("log_dir", "runs/logs")), meta) as log:
-        for fr in pipe.run(source):
-            log.frame(fr.frame_idx, fr.source, fr.image.shape[:2], fr.boxes, fr.persons, fr.orphans, fr.infer_ms)
-            totals.update(fr.counts)
-            n += 1
-            if args.show or save_dir:
-                img = draw(fr)
-                if save_dir:
-                    import cv2
-
-                    cv2.imwrite(str(save_dir / f"{fr.frame_idx:06d}.jpg"), img)
-                if args.show:
-                    import cv2
-
-                    cv2.imshow("ppe.infer", img)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
-            if args.max_frames and n >= args.max_frames:
-                break
+        try:
+            n = _loop(pipe, source, log, args, save_dir, totals)
+        except ConnectionError as e:
+            sys.exit(f"Could not open source {source!r}: {e}")
     print(f"{n} frames; person decisions: {dict(totals)}; log: {log.path}")
     return 0
+
+
+def _loop(pipe: Pipeline, source: str, log: RunLogger, args, save_dir: Path | None, totals: Counter) -> int:
+    """Process, log and optionally display frames; return the frame count."""
+    import cv2
+
+    n = 0
+    for fr in pipe.run(source):
+        log.frame(fr.frame_idx, fr.source, fr.image.shape[:2], fr.boxes, fr.persons, fr.orphans, fr.infer_ms)
+        totals.update(fr.counts)
+        n += 1
+        if args.show or save_dir:
+            img = draw(fr)
+            if save_dir:
+                cv2.imwrite(str(save_dir / f"{fr.frame_idx:06d}.jpg"), img)
+            if args.show:
+                cv2.imshow("ppe.infer", img)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+        if args.max_frames and n >= args.max_frames:
+            break
+    return n
 
 
 def _git_commit() -> str | None:
