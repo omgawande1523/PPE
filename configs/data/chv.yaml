@@ -1,0 +1,19 @@
+# CHV, Color Helmet and Vest (Wang et al. 2021, Sensors 21:3478), converted to the Construction-PPE class indices.
+# Get it: download from the Google Drive link in github.com/ZijianWang-ZW/PPE_detection, unzip, then
+#   python -m ppe.shift --convert chv --src path/to/unzipped/chv
+# Mapped: person->Person, vest->vest, blue/red/white/yellow helmet->helmet. CHV has no gloves, boots, goggles or no_* classes.
+path: datasets/chv
+test: images/test
+
+names:
+  0: helmet
+  1: gloves
+  2: vest
+  3: boots
+  4: goggles
+  5: none
+  6: Person
+  7: no_helmet
+  8: no_goggle
+  9: no_gloves
+  10: no_boots

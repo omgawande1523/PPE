@@ -1,0 +1,71 @@
+# Phase 2 site shift: best.pt on synthetic conditions and external sites.
+# Run (from the repository root):
+#   python -m ppe.shift --config configs/shift/p2_shift_yolo11s.yaml
+#
+# Every cell of the shift table comes from this one command. Cells whose data is
+# not on disk (sh17, chv, own_site) are skipped with the command that would add them.
+#
+# Nothing here was tuned on the test split. The operating confidence is the
+# Phase 1 value chosen on val; the corruption parameters were fixed before any
+# corrupted image was evaluated and were not changed after seeing results.
+
+run_name: p2_shift_yolo11s
+phase: 2
+model: yolo11s
+weights: weights/best.pt
+ultralytics_version: "8.3.21"
+precision_mode: fp32
+device: cpu
+imgsz: 640
+batch: 16
+seed: 0
+conf_floor: 0.001
+nms_iou: 0.7
+match_iou: 0.5
+required_items: [helmet, vest, gloves, boots, goggles]
+bootstrap: 1000                   # paired resamples of images for the 95% interval of each drop; 0 to skip
+
+# Operating confidence from Phase 1 (chosen on val by max macro F1). Never re-chosen here.
+operating_conf: 0.28
+operating_conf_source: p1_baseline_yolo11s_20261007T175332Z   # checked against results.csv when that row exists
+
+# Reference: the Construction-PPE test split (golden set v1), re-measured clean in the same run.
+data: configs/data/construction_ppe.yaml
+dataset: construction-ppe
+split: test
+golden_manifest: golden/golden_v1.csv
+
+# Six synthetic conditions, three severities each (index 0 = severity 1).
+# Each image gets its own random draw, seeded by (seed, condition, severity, file name).
+corruptions:
+  low_light:        # darker exposure (gamma, gain) plus Gaussian sensor noise
+    gamma: [1.5, 2.0, 2.5]
+    gain: [0.6, 0.4, 0.25]
+    noise_sigma: [0.01, 0.02, 0.03]          # on a 0-1 intensity scale
+  haze:             # dust or haze: atmospheric scattering, thicker towards the top of the frame
+    beta: [0.5, 1.0, 1.6]                    # transmission t = exp(-beta * d), d from 0.5 (bottom) to 1 (top)
+    airlight_bgr: [0.72, 0.80, 0.86]         # warm grey dust
+  motion_blur:      # linear blur, random direction per image
+    length_frac: [0.015, 0.03, 0.05]         # kernel length as a fraction of the longer image side
+  jpeg:             # re-encoding at low quality
+    quality: [25, 15, 7]
+  rain:             # streaks, darkening and a slightly soft lens
+    density: [0.0008, 0.0018, 0.0035]        # streaks per pixel
+    length_frac: [0.03, 0.05, 0.07]
+    alpha: [0.5, 0.6, 0.7]
+    darken: [0.9, 0.8, 0.7]
+  downscale:        # distant camera: content shrunk inside a frame of the same size, labels shrunk with it
+    scale: [0.5, 0.35, 0.25]
+
+# External sites, converted to our class indices by `python -m ppe.shift --convert ...`.
+# Only the classes in `classes` are evaluated; every other class has no labels there.
+external:
+  sh17:
+    data: configs/data/sh17.yaml
+    classes: [helmet, vest, gloves, boots, person]
+  chv:
+    data: configs/data/chv.yaml
+    classes: [helmet, vest, person]
+  own_site:
+    data: configs/data/own_site.yaml
+    classes: all
