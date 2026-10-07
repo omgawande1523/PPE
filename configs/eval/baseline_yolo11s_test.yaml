@@ -22,3 +22,4 @@ conf_floor: 0.001                 # keep (almost) every box; thresholds are appl
 nms_iou: 0.7                      # Ultralytics default, as in training
 match_iou: 0.5                    # IoU for TP matching and person matching
 required_items: [helmet, vest, gloves, boots, goggles]   # vest has no no_* class, so it never raises a violation
+bootstrap: 1000                   # resamples of images for 95% intervals; 0 to skip

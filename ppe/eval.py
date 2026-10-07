@@ -284,6 +284,35 @@ def person_level(preds: list[dict], model_names: dict[int, str], t: float, requi
             "n_gt_unmatched": n_gt_unmatched, "n_gt_orphan_neg": n_gt_orphan_neg}
 
 
+def bootstrap(preds: list[dict], nc: int, names: dict[int, str], t: float, required: list[str], iou_thr: float,
+              n_boot: int, seed: int) -> dict[tuple[str, str], tuple[float, float]]:
+    """95% percentile intervals from resampling images with replacement.
+
+    Images, not boxes, are the independent unit, so whole images are resampled.
+    Returns {(class, metric): (low, high)} for macro AP@0.5 (predict path), each
+    violation class's box recall at t, and person-level violation recall.
+    """
+    per_img = [match_per_class([fr], nc, iou_thr) for fr in preds]
+    per_img_pl = [person_level([fr], names, t, required, iou_thr) for fr in preds]
+    rng = np.random.default_rng(seed)
+    samples: dict[tuple[str, str], list[float]] = {}
+    for _ in range(n_boot):
+        idx = rng.integers(0, len(preds), len(preds))
+        agg = {c: {"conf": np.concatenate([per_img[i][c]["conf"] for i in idx]),
+                   "tp": np.concatenate([per_img[i][c]["tp"] for i in idx]).astype(bool),
+                   "n_gt": int(sum(per_img[i][c]["n_gt"] for i in idx))} for c in range(nc)}
+        aps = [ap50_from_curve(agg[c]) for c in range(nc) if agg[c]["n_gt"] > 0]
+        samples.setdefault(("all", "ap50_predict"), []).append(float(np.mean(aps)))
+        for c in range(nc):
+            if names[c] in VIOLATION_CLASSES and agg[c]["n_gt"] > 0:
+                samples.setdefault((names[c], "recall"), []).append(prf_at(agg[c], t)[4])
+        gv = sum(per_img_pl[i]["gt_viol"]["any"] for i in idx)
+        if gv:
+            hit = sum(per_img_pl[i]["hit"]["any"] for i in idx)
+            samples.setdefault(("person_any_violation", "violation_recall"), []).append(hit / gv)
+    return {k: (float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))) for k, v in samples.items()}
+
+
 # ----------------------------------------------------------------------------- figures
 
 def save_pr_curves(per: dict, names: dict[int, str], out: Path, t: float) -> None:
@@ -522,6 +551,19 @@ def evaluate(cfg: dict, command: str) -> list[dict]:
         add(split, "person_any_violation", "nonviolator_flag_rate",
             pl["nonviol_flagged"] / pl["nonviol_gt"] if pl["nonviol_gt"] else float("nan"), pl["nonviol_gt"],
             f"{pnote}; labelled persons with no violation who were flagged for any item")
+
+        n_boot = int(cfg.get("bootstrap", 0))
+        if n_boot:
+            print(f"[{split}] bootstrap, {n_boot} resamples ...", flush=True)
+            per_all = [per[c] for c in per if per[c]["n_gt"] > 0]
+            add(split, "all", "ap50_predict", float(np.mean([ap50_from_curve(pc) for pc in per_all])),
+                sum(pc["n_gt"] for pc in per_all), "macro AP@0.5 from the predict path; compare with map50")
+            ci = bootstrap(preds, nc, model_names, t, pl["items"], iou_thr, n_boot, seed)
+            bnote = (f"95% percentile interval, {n_boot} bootstrap resamples of the {len(preds)} images, "
+                     f"seed {seed}")
+            for (cls, metric), (lo, hi) in sorted(ci.items()):
+                add(split, cls, f"{metric}_ci95_low", lo, len(preds), bnote)
+                add(split, cls, f"{metric}_ci95_high", hi, len(preds), bnote)
 
         fig_dir = FIGURES_DIR / run_id / split
         save_pr_curves(per, model_names, fig_dir, t)
