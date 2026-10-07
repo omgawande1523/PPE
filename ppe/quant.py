@@ -76,8 +76,10 @@ def run_model(cfg: dict, name: str, command: str) -> None:
     s = model_cfg(cfg, name)
     weights = REPO_ROOT / s["weights"]
     if not weights.exists():
-        sys.exit(f"[{name}] weights not found: {s['weights']}. Run: python -m ppe.export --config "
-                 f"{cfg.get('export_config', 'configs/export/p3_export_yolo11s.yaml')}")
+        print(f"[{name}] weights not found: {s['weights']}; skipped (its comparisons too). Build it with: "
+              f"python -m ppe.export --config {cfg.get('export_config', 'configs/export/p3_export_yolo11s.yaml')}",
+              flush=True)
+        return
     only = cfg["models"][name].get("only")
     collect: dict = {}
     print(f"\n===== {name}: {s['weights']} (batch {s['batch']}) =====", flush=True)
@@ -115,10 +117,13 @@ def compare(cfg: dict, command: str) -> list[dict]:
         for n in (ref, cand):
             if n not in loaded:
                 p = counts_path(cfg, n)
-                if not p.exists():
-                    sys.exit(f"No counts for {n}: run python -m ppe.quant --config ... --model {n}")
-                with p.open("rb") as fh:
-                    loaded[n] = pickle.load(fh)
+                if p.exists():
+                    with p.open("rb") as fh:
+                        loaded[n] = pickle.load(fh)
+        if ref not in loaded or cand not in loaded:
+            print(f"[{cand} vs {ref}] skipped: no counts for {ref if ref not in loaded else cand} "
+                  f"(python -m ppe.quant --config ... --model NAME)", flush=True)
+            continue
         A, B = loaded[ref], loaded[cand]
         if A["meta"]["conf"] != B["meta"]["conf"]:
             sys.exit(f"{ref} and {cand} used different operating confidences")
