@@ -1,0 +1,19 @@
+# Own-site footage (Phase 2): at least 200 frames from one real site or the college workshop,
+# labelled with the 11 Construction-PPE classes below (staged violations included).
+# Put images in datasets/own_site/images/test and YOLO labels in datasets/own_site/labels/test.
+# Not recorded yet; see results/missing.md.
+path: datasets/own_site
+test: images/test
+
+names:
+  0: helmet
+  1: gloves
+  2: vest
+  3: boots
+  4: goggles
+  5: none
+  6: Person
+  7: no_helmet
+  8: no_goggle
+  9: no_gloves
+  10: no_boots
