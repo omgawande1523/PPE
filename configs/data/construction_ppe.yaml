@@ -1,0 +1,23 @@
+# Ultralytics Construction-PPE (AGPL-3.0), YOLO format.
+# Get it with: python -m ppe.data --download construction-ppe
+# 'path' is relative to the repository root; ppe.eval and ppe.train resolve it
+# at run time, so no absolute path is ever committed.
+# Class names are copied from the dataset's own data.yaml. The dataset says
+# "Person"; best.pt says "person". Indices match; only the case differs.
+path: datasets/construction-ppe
+train: images/train   # 1132 images
+val: images/val       # 143 images
+test: images/test     # 141 images; frozen as golden set v1 (golden/golden_v1.csv). Never train, tune or pick thresholds on it.
+
+names:
+  0: helmet
+  1: gloves
+  2: vest
+  3: boots
+  4: goggles
+  5: none
+  6: Person
+  7: no_helmet
+  8: no_goggle
+  9: no_gloves
+  10: no_boots

@@ -1,0 +1,24 @@
+# Phase 1 honest baseline: best.pt on the Construction-PPE test split.
+# Run: python -m ppe.eval --config configs/eval/baseline_yolo11s_test.yaml
+# The val split is evaluated in the same run and is the only split used to
+# choose the operating confidence. The test split is golden set v1.
+
+run_name: p1_baseline_yolo11s
+phase: 1
+model: yolo11s
+weights: weights/best.pt          # YOLO11s, 11 classes, trained with Ultralytics 8.3.21
+ultralytics_version: "8.3.21"     # refuse to run on any other version
+data: configs/data/construction_ppe.yaml
+dataset: construction-ppe
+split: test                       # val is always evaluated too
+golden_manifest: golden/golden_v1.csv
+condition: clean
+precision_mode: fp32
+device: cpu
+imgsz: 640
+batch: 16
+seed: 0
+conf_floor: 0.001                 # keep (almost) every box; thresholds are applied afterwards
+nms_iou: 0.7                      # Ultralytics default, as in training
+match_iou: 0.5                    # IoU for TP matching and person matching
+required_items: [helmet, vest, gloves, boots, goggles]   # vest has no no_* class, so it never raises a violation

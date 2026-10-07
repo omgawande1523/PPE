@@ -4,7 +4,7 @@
 
 weights: weights/best.pt      # YOLO11s, 11 classes, trained with Ultralytics 8.3.21
 source: "0"                   # webcam index, video file, image file or image folder
-conf: 0.25                    # Ultralytics default. Provisional: Phase 1 picks it on val, never on test.
+conf: 0.28                    # Chosen on val by ppe.eval (max macro F1, run p1_baseline_yolo11s in results.csv). Never on test.
 iou: 0.7
 imgsz: 640
 device: null                  # null = auto (cuda:0 if available, else cpu)
