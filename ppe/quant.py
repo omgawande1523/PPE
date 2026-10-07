@@ -61,7 +61,7 @@ def model_cfg(cfg: dict, name: str) -> dict:
     spec = cfg["models"][name]
     s = copy.deepcopy(cfg["shift"])
     s.update(run_name=f"{cfg['run_name']}_{name}", phase=cfg["phase"], model=cfg["model"], weights=spec["weights"],
-             precision_mode=name, batch=int(spec.get("batch", 1)))
+             precision_mode=name, batch=int(spec.get("batch", 1)), device=spec.get("device", cfg["shift"]["device"]))
     if "bootstrap" in cfg:
         s["bootstrap"] = int(cfg["bootstrap"])
     return s
@@ -71,7 +71,7 @@ def counts_path(cfg: dict, name: str) -> Path:
     return COUNTS_DIR / cfg["run_name"] / f"{name}.pkl"
 
 
-def run_model(cfg: dict, name: str, command: str) -> None:
+def run_model(cfg: dict, name: str, command: str, device_label: str | None = None) -> None:
     """Shift table of one model; rows to results.csv, per-image counts to runs/quant/ for --compare."""
     s = model_cfg(cfg, name)
     weights = REPO_ROOT / s["weights"]
@@ -84,6 +84,9 @@ def run_model(cfg: dict, name: str, command: str) -> None:
     collect: dict = {}
     print(f"\n===== {name}: {s['weights']} (batch {s['batch']}) =====", flush=True)
     rows = shift_evaluate(s, command, only, collect)
+    if device_label:                     # accuracy measured on an edge board: say which one
+        for r in rows:
+            r["device"] = device_label
     append_rows(rows)
     out = counts_path(cfg, name)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -260,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", nargs="+", help="run only these models' shift tables (no comparison)")
     ap.add_argument("--compare", action="store_true", help="only compare, from counts saved by earlier --model runs")
     ap.add_argument("--table", metavar="RUN_ID", help="print a comparison run from results.csv")
+    ap.add_argument("--device-label", help="device column for the rows, e.g. pi5_8gb when run on a board")
     args = ap.parse_args(argv)
     if args.table:
         return table(args.table)
@@ -274,10 +278,15 @@ def main(argv: list[str] | None = None) -> int:
         for n in needed:
             if n not in cfg["models"]:
                 sys.exit(f"Unknown model {n}; the config has {list(cfg['models'])}")
-            run_model(cfg, n, command)
+            run_model(cfg, n, command, args.device_label)
         if args.model:
             return 0
     rows = compare(cfg, command)
+    if not rows:
+        sys.exit("Nothing compared.")
+    if args.device_label:
+        for r in rows:
+            r["device"] = args.device_label
     append_rows(rows)
     print(f"\nAppended {len(rows)} rows to results/results.csv as run {rows[0]['run_id']}")
     print(f"Table: python -m ppe.quant --table {rows[0]['run_id']}")

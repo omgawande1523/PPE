@@ -1,0 +1,38 @@
+# Phase 3 on a Jetson Orin Nano (JetPack 6). Procedure: docs/edge_boards.md (Jetson section).
+# First build the engines ON the Jetson: python -m ppe.export --config configs/export/p3_export_jetson.yaml
+# Run on the Jetson (from the repository root):
+#   sudo nvpmodel -m 0 && sudo jetson_clocks
+#   python -m ppe.bench --config configs/bench/p3_bench_jetson_orin_nano.yaml
+
+run_name: p3_bench_jetson_orin_nano
+phase: 3
+model: yolo11s
+device_label: jetson_orin_nano_8gb_maxn   # EDIT: board, RAM and nvpmodel mode
+device: 0                                 # GPU
+seed: 0
+imgsz: 640
+conf: 0.28
+nms_iou: 0.7
+warmup: 50                                # TensorRT and CUDA need a longer warm-up
+frames: 500
+runs: 3
+cooldown_s: 60
+images: {data: configs/data/construction_ppe.yaml, split: val, n: 50}
+
+models:
+  engine_fp16:   {weights: weights/export/yolo11s/yolo11s_fp16.engine}
+  engine_int8:   {weights: weights/export/yolo11s/yolo11s_int8.engine}
+  onnx_fp32:     {weights: weights/export/yolo11s/yolo11s_fp32.onnx}
+  pytorch_fp16:  {weights: weights/best.pt, half: true}
+  pytorch_fp32:  {weights: weights/best.pt}
+
+# On-board INA3221 monitor, VDD_IN rail (whole module input). Check the path and that
+# in1_label says VDD_IN before trusting it: ls /sys/bus/i2c/drivers/ina3221/*/hwmon/hwmon*/
+# The command prints watts = mV * mA / 1e6. A USB-C/barrel meter at the wall is the
+# primary number; this rail is the cross-check (use source: csv for the meter instead).
+power:
+  source: command
+  command: "H=$(echo /sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon*); echo $(( $(cat $H/in1_input) * $(cat $H/curr1_input) ))"
+  scale: 1.0e-6
+  poll_hz: 10
+  idle_seconds: 60
