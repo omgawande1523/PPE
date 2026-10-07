@@ -80,9 +80,11 @@ def peak_rss_mb() -> float:
 
 def cpu_name() -> str:
     try:
-        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
-            if line.lower().startswith(("model name", "hardware", "model\t")):
-                return line.split(":", 1)[1].strip()
+        lines = Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines()
+        for key in ("model name", "hardware", "model"):      # x86, older Pi kernels, Pi/Jetson board name
+            for line in lines:
+                if line.lower().split(":")[0].strip() == key and ":" in line:
+                    return line.split(":", 1)[1].strip()
     except OSError:
         pass
     return platform.processor() or platform.machine()
