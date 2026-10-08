@@ -84,19 +84,23 @@ def measure(weights: Path, images_dir: Path, cfg: dict, work: Path, tag: str) ->
             "map50_95": float(m.box.map), "n_images": len(images), "weights_sha": sha256_path(weights)[:12]}
 
 
-def gate(cand: dict, inc: dict, cand_site: dict, inc_site: dict, tol: float) -> tuple[bool, list[str]]:
-    """The three promotion rules. Returns (promote, one line per rule with its numbers)."""
+def gate(cand: dict, inc: dict, cand_site: dict, inc_site: dict, tol: float,
+         ref: str = "golden") -> tuple[bool, list[str]]:
+    """The three promotion rules. Returns (promote, one line per rule with its numbers).
+
+    `ref` names the reference set in the printed lines (ppe.recipe_study passes "val-clean").
+    """
     lines, ok = [], True
     for c in VIOLATION_CLASSES:
         a, b = cand["recall"][c], inc["recall"][c]
         good = bool(a >= b - 1e-12)
         ok &= good
-        lines.append(f"{'PASS' if good else 'FAIL'} golden recall {c}: {a:.4f} vs {b:.4f} "
+        lines.append(f"{'PASS' if good else 'FAIL'} {ref} recall {c}: {a:.4f} vs {b:.4f} "
                      f"({cand['tp'][c]}/{cand['gt'][c]} vs {inc['tp'][c]}/{inc['gt'][c]})")
     drop = inc["map50"] - cand["map50"]
     good = bool(drop <= tol + 1e-12)
     ok &= good
-    lines.append(f"{'PASS' if good else 'FAIL'} golden mAP50 {cand['map50']:.4f} vs {inc['map50']:.4f} "
+    lines.append(f"{'PASS' if good else 'FAIL'} {ref} mAP50 {cand['map50']:.4f} vs {inc['map50']:.4f} "
                  f"(drop {drop:+.4f}, tolerance {tol})")
     a, b = cand_site["recall"]["all"], inc_site["recall"]["all"]
     good = bool(a > b)
