@@ -71,4 +71,10 @@ two rejections are logged and there is **no promotion**.
 
 ## Later phases
 
-Phase 6: not started.
+Phase 6: draft in `paper/` (`python -m ppe.paper`). It cites only rows that exist; every claim the
+missing results above would support is flagged in `paper/flags.md`. Two numbers in the phase reports are not rows yet:
+
+| Result | Why it is missing | Command |
+|---|---|---|
+| Count of quantisation-widening intervals that exclude 0 (results/phase3_edge.md says 8/126 OpenVINO INT8, 23/126 ONNX INT8) | computed in the report, not written to results.csv | add a summary row to `python -m ppe.quant --compare`, then cite it |
+| best.pt file size in the bench table | not written by ppe.export (only exported files are) | add a `model_size_mb` row for `pytorch_fp32` in `ppe.export` |
