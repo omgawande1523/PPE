@@ -56,6 +56,19 @@ error on a held-out SITE; no external site is on disk, so that number does not e
 | Lead time on a real drift (a camera or site that changes over days) | no time-stamped footage; streams are synthetic mixes of test images | same as the row above, with labels on a sample of frames per day |
 | Every YOLO11n Phase 4 row | YOLO11n not trained yet (Phase 1 above) | copy the config with `weights:` pointed at the YOLO11n best.pt and `feature_layer` checked, then the same command |
 
+## Phase 5: promotion, real teacher, human check, real site
+
+Measured on synthetic streams (`results/phase5_loop.md`). The done-criterion asks for one promotion and one rejection;
+two rejections are logged and there is **no promotion**.
+
+| Result | Why it is missing | Command |
+|---|---|---|
+| A promoted candidate | every candidate (2 loop runs, 2 val-only recipes) lost golden/val no_* recall; needs a decision: Colab fine-tune with full replay, or a gate change | after the decision: a new `configs/loop/p5_site_shift_*.yaml`, then `python -m ppe.loop --config` it |
+| Real teacher (YOLO-World) pseudo-labels and their error rate | YOLO-World needs the CLIP text encoder, whose download (openaipublic.azureedge.net) is blocked in the cloud container | on the laptop or Colab: `pip install git+https://github.com/ultralytics/CLIP.git`, then `python -m ppe.loop --config configs/loop/p5_site_shift_yolo_world.yaml` |
+| Human pseudo-label error rate and human minutes | nobody has checked the 20-frame samples yet (runs/ is not committed: re-run the scenario to regenerate them) | fill `runs/loop/<run>/human_check/human_check.csv`, then `python -m ppe.loop --human-check runs/loop/<run>` |
+| Loop on a real site stream | no external site or own footage (Phase 2 rows) | add a stream segment type that reads site frames, then the site-shift config |
+| Monitor recalibrated after a promotion, measured on the remaining stream | no promotion happened | runs automatically once a candidate is promoted |
+
 ## Later phases
 
-Phase 5 (agentic loop) and Phase 6: not started.
+Phase 6: not started.
