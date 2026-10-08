@@ -44,6 +44,18 @@ Measured on the cloud CPU only (`results/phase3_edge.md`). Board procedure: `doc
 | TFLite INT8 (dynamic-range and full-integer) | onnx2tf INT8 conversion killed for memory (~13-14 GB) on the 15 GB VM | on a machine with more RAM: `python -m ppe.export --config configs/export/p3_export_yolo11s.yaml --only tflite_int8 tflite_int8static`, then `python -m ppe.quant --config configs/quant/p3_quant_yolo11s.yaml --model tflite_int8 tflite_int8static` and `--compare` |
 | Every YOLO11n Phase 3 row | YOLO11n not trained yet (Phase 1 above) | `python -m ppe.export --config configs/export/p3_export_yolo11n.yaml`, then quant and bench configs pointed at the YOLO11n exports |
 
+## Phase 4: held-out site, real temporal signal, YOLO11n
+
+Measured with leave-one-condition-out on synthetic shift (`results/phase4_estimator.md`). The brief's done-criterion is the
+error on a held-out SITE; no external site is on disk, so that number does not exist yet.
+
+| Result | Why it is missing | Command |
+|---|---|---|
+| Estimator error on a held-out site (SH17, CHV or own footage) | no external site converted yet (Phase 2 rows above) | convert the site as in Phase 2, then `python -m ppe.estimator --config configs/estimator/p4_estimator_yolo11s.yaml` (sites on disk are scored automatically; cached signals are reused) |
+| Temporal inconsistency on real video (tracked persons whose PPE flickers) | the datasets are still images; the measured signal is a still-image proxy (shaken, re-noised copies) | record site video, run `python -m ppe.infer --source VIDEO` (it writes the JSON-lines runtime log with track IDs to runs/logs/); a per-track flicker reader for that log is Phase 5 work, and true recall needs a labelled sample of frames |
+| Lead time on a real drift (a camera or site that changes over days) | no time-stamped footage; streams are synthetic mixes of test images | same as the row above, with labels on a sample of frames per day |
+| Every YOLO11n Phase 4 row | YOLO11n not trained yet (Phase 1 above) | copy the config with `weights:` pointed at the YOLO11n best.pt and `feature_layer` checked, then the same command |
+
 ## Later phases
 
-Phase 4 (monitor) and everything after: not started.
+Phase 5 (agentic loop) and Phase 6: not started.

@@ -1,0 +1,88 @@
+# Phase 4 reliability estimator: six label-free signals -> estimated recall drop.
+# Run (from the repository root):
+#   python -m ppe.estimator --config configs/estimator/p4_estimator_yolo11s.yaml
+#
+# Per-image signals are cached in runs/estimator/records/ (keyed by every setting
+# below that changes them), so a re-run only refits; --fresh recomputes them.
+#
+# Splits. The estimator is FITTED only on the validation split (clean + the six
+# Phase 2 conditions at three severities, built from val images with the same
+# corruption code and parameters). The test split (golden set v1) is used only to
+# REPORT estimation error, never to fit, choose alpha, or pick a threshold.
+# The training-site reference for the drift signals is a seeded sample of train images.
+#
+# Hold-out. The brief asks for a held-out SITE. No external site is on disk yet
+# (SH17/CHV/own footage, see results/missing.md), so the interim protocol is
+# leave-one-condition-out: for each condition, fit on val windows of the other five
+# (plus clean) and score on test windows of the held-out condition. That holds out
+# both the images and the kind of shift, but it is NOT a site hold-out.
+#
+# Everything below was fixed before any estimate was scored; nothing was changed after.
+
+run_name: p4_estimator_yolo11s
+phase: 4
+model: yolo11s
+weights: weights/best.pt
+ultralytics_version: "8.3.21"
+precision_mode: fp32
+device: cpu
+imgsz: 640
+batch: 16
+seed: 0
+nms_iou: 0.7
+match_iou: 0.5
+
+operating_conf: 0.28          # Phase 1, chosen on val; never re-chosen here
+operating_conf_source: p1_baseline_yolo11s_20261007T175332Z
+cand_conf: 0.10               # candidate boxes for the confidence signals and the AC/ATC baselines
+
+data: configs/data/construction_ppe.yaml
+golden_manifest: golden/golden_v1.csv
+shift_config: configs/shift/p2_shift_yolo11s.yaml   # corruption code and parameters are Phase 2's, unchanged
+fit_split: val
+eval_split: test
+reference: {split: train, n_images: 300}            # training-site reference for drift and feature distance
+
+# Signals
+feature_layer: 10             # C2PSA output of YOLO11s, global-average pooled (512-d)
+augment: {scale: 0.75, brightness: 1.3}             # plus a horizontal flip
+temporal: {frames: 3, shift_frac: 0.02, noise_sigma: 0.01}   # still-image proxy: 3 shaken, re-noised copies
+person_detector:
+  path: weights/coco/yolo11n.pt
+  url: https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
+  sha256: 0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1
+  conf: 0.40
+  iou: 0.30                   # a COCO person counts as found if a PPE-model person box overlaps it by this IoU
+
+# Windows: a window is a set of images the monitor summarises at once.
+window_size: 40
+windows_per_cell: 20          # same image subsets for every condition of a split (paired)
+
+# Targets: recall drop at the operating confidence, positive = recall lost,
+# paired against the same images clean.
+targets:
+  all: all                                   # micro recall over all 11 classes
+  violation: [no_helmet, no_goggle, no_gloves, no_boots]   # pooled (micro) recall of the four violation classes
+
+# Estimator: ridge regression on standardised signals.
+ridge_alpha: 1.0
+
+bootstrap_true: 1000          # paired image resamples for the true-drop 95% interval of each cell
+bootstrap_est: 200            # image resamples for the estimated-drop 95% interval of each cell
+
+# Lead time: synthetic streams on test images. 8 clean windows, then 10 windows in which
+# the share of images under the condition rises 10%, 20%, ... 100%.
+stream:
+  clean_windows: 8
+  ramp_windows: 10
+  severities: [2, 3]
+  repeats: 20
+  drop_threshold: 0.05        # a "real drop" and an alarm both mean recall drop >= 0.05 (fixed a priori)
+
+# Held-out sites: evaluated whenever converted data is on disk (python -m ppe.shift --convert ...).
+# For each, an estimator restricted to the site's labelled classes is fitted on all val conditions
+# and scored on site windows; true drop = test-clean recall minus site-window recall on those classes.
+holdout_sites:
+  sh17: {data: configs/data/sh17.yaml, classes: [helmet, vest, gloves, boots, person]}
+  chv: {data: configs/data/chv.yaml, classes: [helmet, vest, person]}
+  own_site: {data: configs/data/own_site.yaml, classes: all}

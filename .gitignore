@@ -23,3 +23,4 @@ venv/
 .ipynb_checkpoints/
 /*.pt
 calibration_image_sample_data_*.npy
+weights/coco/
