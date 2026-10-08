@@ -1,0 +1,501 @@
+<!--
+Paper draft template (Phase 6). Every measured number is a placeholder in double braces that names its row in
+results/results.csv or results/promotions.csv. Render with:  python -m ppe.paper
+Do not type a measured number by hand: the renderer rejects hand-typed decimals.
+[FLAG: ...] marks a claim the data does not yet support; they are collected into paper/flags.md.
+-->
+
+# Does the model still work here? Label-free reliability estimation and gated self-improvement for edge PPE detection
+
+*Draft from results.csv and promotions.csv. Not for submission: see the flagged claims in paper/flags.md.*
+
+**Authors:** [FLAG: author list, affiliations (SVPCET Nagpur) and the citation of the group's earlier YOLOv11 PPE paper are not in the repository; add them.]
+
+## Abstract
+
+A PPE compliance detector that is deployed at a new site can fail without anyone noticing: missed violations raise no alert.
+We re-measure a published YOLO11s detector for 11 PPE classes on a held-out test split, measure how its recall falls under
+18 synthetic image conditions and under quantisation, fit a label-free estimator of the recall drop, and wrap the detector in a
+monitor, diagnose, improve and verify loop whose promotion gate protects violation recall.
+On the 141-image test split the detector reaches mAP@0.5 {{p1/test/clean/all/map50}} (95% bootstrap interval of the deployed-path AP
+{{p1/test/clean/all/ap50_predict_ci95_low}} to {{p1/test/clean/all/ap50_predict_ci95_high}}), against the {{p1/val/clean/all/map50}}
+previously reported on the validation split, and finds only {{p1/test/clean/no_helmet/recall|count}} of {{p1/test/clean/no_helmet/recall|n}} no_helmet,
+{{p1/test/clean/no_goggle/recall|count}} of {{p1/test/clean/no_goggle/recall|n}} no_goggle, {{p1/test/clean/no_gloves/recall|count}} of {{p1/test/clean/no_gloves/recall|n}} no_gloves
+and {{p1/test/clean/no_boots/recall|count}} of {{p1/test/clean/no_boots/recall|n}} no_boots boxes.
+Severe low light, motion blur, JPEG compression, rain and downscaling cut micro recall by between {{p2/test/downscale_s3/all/recall_delta|abs}}
+and {{p2/test/low_light_s3/all/recall_delta|abs}}; all but low light do so silently, with precision staying close to its clean value.
+ONNX Runtime static INT8 looks harmless on clean images but widens the low-light loss by {{cmp/test/low_light_s3/all/recall_delta_widening@onnx_int8 vs onnx_fp32|abs}}
+micro recall, while OpenVINO INT8 and FP16 do not measurably widen it.
+A ridge regressor on label-free signals estimates the overall recall drop of an unseen corruption with window MAE {{est/test/shifted_18_cells/all/mae_window_signals}},
+against {{est/test/shifted_18_cells/all/mae_window_ac}} and {{est/test/shifted_18_cells/all/mae_window_atc}} for the average-confidence and ATC baselines,
+but confidence drift alone does as well ({{est/test/shifted_18_cells/all/mae_window_only_confidence_drift}}) and no method estimates the violation-class drop.
+In the loop, camera faults and a transient drop caused no retraining, and the gate rejected both fine-tuned candidates because they forgot violation recall
+on the golden set; no candidate has been promoted yet.
+[FLAG: The abstract cannot yet answer question 1 (real site shift) or question 3 (Raspberry Pi and Jetson cost), and cannot claim a promotion. All three are missing results; see section 8 and results/missing.md.]
+
+## 1. Introduction
+
+Vision-based PPE compliance monitoring is attractive for construction sites because one camera can watch many workers.
+The usual evaluation reports mAP on a random split of the training dataset. That number says little about the question a site
+manager actually has after installation: does the model still work here? A detector moved to a new site meets other cameras,
+lighting, clothing and viewpoints. When it degrades, the failure is mostly silent: a missed worker or a missed missing helmet
+produces no box and therefore no alert, and nobody labels the live stream to find out.
+
+This paper treats that problem as a measurement problem first. We ask three questions about one deployed detector:
+
+1. How much accuracy is lost when the detector moves to images from a site it was not trained on?
+2. Which classes and conditions lose the most, and does quantisation make the loss worse?
+3. What does each model cost in speed, memory and energy on Raspberry Pi and Jetson boards?
+
+On top of the answers we build a four-stage loop (monitor, diagnose, improve, verify). The monitor estimates the recall drop
+without labels, the diagnosis separates camera faults from domain shift, the improve stage fine-tunes on mined frames with replay,
+and a promotion gate on a frozen, human-labelled golden set decides whether a candidate replaces the current weights.
+
+Contributions, each limited to what the data in this draft supports:
+
+- An honest re-measurement of the detector on its never-used test split, with per-class and per-person violation recall and bootstrap intervals (section 3).
+- A per-class, per-condition robustness table over 18 synthetic conditions with paired intervals, and a test of whether three quantisation paths widen the loss (sections 4 and 5).
+- A comparison of six label-free signals against two published confidence baselines for estimating the recall drop of an unseen corruption, including the negative results (section 6).
+- A gated loop that, on synthetic streams, refuses to retrain on camera faults and transient drops and rejects candidates that forget violation recall, with every decision logged (section 7).
+
+[FLAG: Contribution claims about real site shift, edge-board cost and a successful gated promotion are withheld until those results exist.]
+
+Everything in this draft is regenerated from one repository: each number is a row of results/results.csv or results/promotions.csv,
+and paper/trace.csv lists the row and the command behind every number in the text. Values are shown to three decimals unless stated;
+trace.csv holds the full stored value.
+
+## 2. Related work
+
+**PPE detection.** Vision-based PPE checking on construction sites has mostly used single-stage YOLO detectors: Nath et al. [11] check hard hats and vests with YOLOv3,
+Delhi et al. [12] apply deep-learning detection to construction-site PPE compliance, and Wang et al. [10] release the CHV dataset (1,330 images) and compare YOLO variants.
+SH17 [9] provides 8,099 manufacturing images in 17 classes. These works report accuracy on splits of their own datasets; they do not measure what happens at a site
+the detector was not trained on, and few report recall on violation classes separately. Our detector is the Ultralytics YOLO11 implementation [14] trained on Construction-PPE [15],
+one of the few public sets with explicit missing-PPE classes (no_helmet, no_goggle, no_gloves, no_boots).
+[FLAG: The group's own earlier YOLOv11 PPE paper, which this work extends and corrects, is not cited because its reference is not in the repository.]
+
+**Robustness benchmarks.** Hendrycks and Dietterich [1] introduced common-corruption benchmarks (ImageNet-C) and Michaelis et al. [2] extended them to object detection
+(COCO-C, Pascal-C, Cityscapes-C), showing large accuracy losses under corruption. Our six conditions follow the same idea at three severities, but report per-class recall of the
+violation classes and person-level alerts rather than mAP alone, with paired intervals on 141 images.
+
+**Label-free accuracy estimation.** The maximum-softmax baseline of Hendrycks and Gimpel [3] underlies average-confidence (AC) estimators; Guillory et al. [5] predict the change in accuracy
+from the difference of average confidences; Garg et al. [4] propose average thresholded confidence (ATC); Deng and Zheng [6] regress accuracy on dataset-level feature statistics
+over a meta-set of transformed datasets. For detectors, Yang et al. [7] show that box stability under feature dropout correlates with mAP across environments, and Anirudh and Turaga [8]
+estimate detector performance on unlabelled data. We compare against AC and ATC and fit a regressor in the spirit of [6] on detector-specific signals; we did not compare against box stability [7].
+[FLAG: The box-stability score [7] is the closest detector-specific baseline and has not been run; a reviewer is likely to ask for it.]
+
+**Continual learning and self-training.** Fine-tuning on new data causes catastrophic forgetting [16]; replay of earlier data is a standard counter-measure [17] (shown there for reinforcement learning).
+Teacher-student self-training with pseudo-labels [18] and open-vocabulary detectors such as YOLO-World [19] make a label-free improve stage possible. Our verify stage is a guard against both
+forgetting and bad pseudo-labels; section 7 shows that the replay used here was not enough to prevent forgetting of violation classes.
+
+**Quantisation and robustness.** Xiao et al. [20] benchmark quantised classifiers and find that lower bit-widths are more vulnerable to natural corruptions. We ask the same question for a
+detector's violation classes and find that the answer depends on the quantisation toolchain (section 5).
+
+**Sensor and IoT data faults.** Ni et al. [21] define sensor-network data faults including stuck-at values and noise; Sharma et al. [22] measure the prevalence of such faults in deployments;
+Teh et al. [23] review sensor data-quality errors including drift and stuck-at values. Our diagnosis vocabulary (stuck-at, degradation, nonfunctional, temporal) is adapted from these works
+for camera frames; none of them uses exactly these four categories.
+
+### References
+
+1. D. Hendrycks, T. Dietterich. Benchmarking Neural Network Robustness to Common Corruptions and Perturbations. ICLR 2019. `arXiv:1903.12261`
+2. C. Michaelis et al. Benchmarking Robustness in Object Detection: Autonomous Driving when Winter is Coming. arXiv preprint, 2019. `arXiv:1907.07484`
+3. D. Hendrycks, K. Gimpel. A Baseline for Detecting Misclassified and Out-of-Distribution Examples in Neural Networks. ICLR 2017. `arXiv:1610.02136`
+4. S. Garg, S. Balakrishnan, Z. C. Lipton, B. Neyshabur, H. Sedghi. Leveraging Unlabeled Data to Predict Out-of-Distribution Performance. ICLR 2022. `arXiv:2201.04234`
+5. D. Guillory, V. Shankar, S. Ebrahimi, T. Darrell, L. Schmidt. Predicting with Confidence on Unseen Distributions. ICCV 2021. `arXiv:2107.03315`
+6. W. Deng, L. Zheng. Are Labels Always Necessary for Classifier Accuracy Evaluation? CVPR 2021. `arXiv:2007.02915`
+7. Y. Yang, W. Wang, Z. Chen, J. Dai, L. Zheng. Bounding Box Stability against Feature Dropout Reflects Detector Generalization across Environments. ICLR 2024. `arXiv:2403.13803`
+8. R. Anirudh, P. Turaga. Interactively Test Driving an Object Detector: Estimating Performance on Unlabeled Data. WACV 2014. `arXiv:1406.5653`
+9. H. M. Ahmad, A. Rahimi. SH17: A Dataset for Human Safety and Personal Protective Equipment Detection in Manufacturing Industry. arXiv preprint, 2024. `arXiv:2407.04590`
+10. Z. Wang, Y. Wu, L. Yang, A. Thirunavukarasu, C. Evison, Y. Zhao. Fast Personal Protective Equipment Detection for Real Construction Sites Using Deep Learning Approaches. Sensors 21(10):3478, 2021. `doi:10.3390/s21103478`
+11. N. D. Nath, A. H. Behzadan, S. G. Paal. Deep learning for site safety: Real-time detection of personal protective equipment. Automation in Construction 112:103085, 2020. `doi:10.1016/j.autcon.2020.103085`
+12. V. S. K. Delhi, R. Sankarlal, A. Thomas. Detection of Personal Protective Equipment (PPE) Compliance on Construction Site Using Computer Vision Based Deep Learning Techniques. Frontiers in Built Environment 6, 2020. `doi:10.3389/fbuil.2020.00136`
+13. (reserved: the group's earlier YOLOv11 PPE paper)
+14. G. Jocher, J. Qiu. Ultralytics YOLO11, software, 2024. https://github.com/ultralytics/ultralytics
+15. M. Dalvi, N. Singh, S. Bhingarde, K. Chalke. Construction-PPE: Personal Protective Equipment Detection Dataset. Ultralytics, 2025. https://docs.ultralytics.com/datasets/detect/construction-ppe
+16. J. Kirkpatrick et al. Overcoming catastrophic forgetting in neural networks. PNAS 114(13), 2017. `doi:10.1073/pnas.1611835114`
+17. D. Rolnick, A. Ahuja, J. Schwarz, T. P. Lillicrap, G. Wayne. Experience Replay for Continual Learning. NeurIPS 2019. `arXiv:1811.11682`
+18. Q. Xie, M.-T. Luong, E. Hovy, Q. V. Le. Self-training with Noisy Student improves ImageNet classification. CVPR 2020. `arXiv:1911.04252`
+19. T. Cheng, L. Song, Y. Ge, W. Liu, X. Wang, Y. Shan. YOLO-World: Real-Time Open-Vocabulary Object Detection. CVPR 2024. `arXiv:2401.17270`
+20. Y. Xiao, A. Liu, T. Zhang, H. Qin, J. Guo, X. Liu. RobustMQ: benchmarking robustness of quantized models. Visual Intelligence 1:30, 2023. `doi:10.1007/s44267-023-00031-w`
+21. K. Ni et al. Sensor network data fault types. ACM Transactions on Sensor Networks 5(3), 2009. `doi:10.1145/1525856.1525863`
+22. A. B. Sharma, L. Golubchik, R. Govindan. Sensor faults: Detection methods and prevalence in real-world datasets. ACM Transactions on Sensor Networks 6(3), 2010. `doi:10.1145/1754414.1754419`
+23. H. Y. Teh, A. W. Kempa-Liehr, K. I-K. Wang. Sensor data quality: a systematic review. Journal of Big Data 7:11, 2020. `doi:10.1186/s40537-020-0285-1`
+
+[FLAG: References were checked for existence and bibliographic details against arXiv, publisher and CVF pages, but [8] and [12] were checked from metadata only; read both before describing them further.]
+
+## 3. Baseline and corrections
+
+### 3.1 Detector, data and protocol
+
+The detector is weights/best.pt: YOLO11s, 11 classes (helmet, gloves, vest, boots, goggles, none, person, no_helmet, no_goggle,
+no_gloves, no_boots), trained for 50 epochs at 640 px with Ultralytics 8.3.21 on the Ultralytics Construction-PPE dataset
+(1,132 train, 143 validation and 141 test images). The dataset files in the repository are byte-identical to the Ultralytics release.
+The test split is frozen as golden set v1 (file list and hashes in golden/golden_v1.csv) and is used only for scoring, never for
+training, threshold selection or tuning.
+
+Detection metrics use the Ultralytics protocol (`conf 0.001`, `NMS IoU 0.7`). Deployed behaviour is measured at a single operating
+confidence, {{p1/val/clean/all/operating_conf|.2f}}, chosen on the validation split as the maximum of macro F1 over the 11 classes.
+Person-level metrics follow the deployed pipeline: a PPE or no_* box belongs to the person box that contains its centre, and a person
+counts as a flagged violator when a no_* box of the labelled missing item is assigned to it (person matching at IoU {{cfg:0.5:configs/eval/baseline_yolo11s_test.yaml}}).
+Intervals are 95% percentile bootstrap intervals over images (1,000 resamples).
+
+### 3.2 Corrections to the original system
+
+The original code had two pipelines that disagreed (a per-person crop at one confidence and a whole-frame pass at another), matched class names
+by substring so that a no_helmet box counted as "helmet present", looked for a class (safety_glasses) the model does not have, cleared every
+worker when one helmet was visible anywhere, and inferred a violation whenever a PPE item was not detected, so every miss became a false violation.
+Phase 0 replaced both with one pipeline (ppe/infer.py, ppe/associate.py) with per-person association, exact class names, both evidence types
+(a no_* box is a violation; a missing positive class is "unknown", not a violation) and a JSON-lines runtime log with track IDs.
+Credentials were moved out of the code into environment variables.
+[FLAG: The Phase 0 pipeline is not yet accepted into the main branch, and rotation of the previously committed Twilio token is not confirmed. Neither changes a number in this paper, but both must be done before the repository is cited.]
+[FLAG: The effect of the old compliance logic on person-level false alerts was not measured; the paper can describe the fixes but cannot quantify what they changed.]
+
+### 3.3 Validation versus test
+
+The evaluation reproduces the training notebook on the validation split: mAP@0.5 {{p1/val/clean/all/map50}} and mAP@0.5:0.95 {{p1/val/clean/all/map50_95}}.
+On the test split the same code gives mAP@0.5 **{{p1/test/clean/all/map50}}** (bootstrap {{p1/test/clean/all/ap50_predict_ci95_low}} to {{p1/test/clean/all/ap50_predict_ci95_high}})
+and mAP@0.5:0.95 {{p1/test/clean/all/map50_95}}. The validation interval ({{p1/val/clean/all/ap50_predict_ci95_low}} to {{p1/val/clean/all/ap50_predict_ci95_high}})
+overlaps it, so with about 140 images per split the gap is not by itself evidence of a real difference; the validation number was,
+however, also the one used to select the checkpoint. The test figure is the baseline for everything that follows.
+A second run with the same seed (run p1rep) reproduced it: mAP@0.5 {{p1rep/test/clean/all/map50}}.
+
+**Table 1.** Per-class results on the test split (n = labelled instances). Recall and precision at the operating confidence.
+
+| Class | n | mAP@0.5 | Recall | Precision |
+|---|---:|---:|---:|---:|
+| helmet | {{p1/test/clean/helmet/recall|n}} | {{p1/test/clean/helmet/map50}} | {{p1/test/clean/helmet/recall}} | {{p1/test/clean/helmet/precision}} |
+| gloves | {{p1/test/clean/gloves/recall|n}} | {{p1/test/clean/gloves/map50}} | {{p1/test/clean/gloves/recall}} | {{p1/test/clean/gloves/precision}} |
+| vest | {{p1/test/clean/vest/recall|n}} | {{p1/test/clean/vest/map50}} | {{p1/test/clean/vest/recall}} | {{p1/test/clean/vest/precision}} |
+| boots | {{p1/test/clean/boots/recall|n}} | {{p1/test/clean/boots/map50}} | {{p1/test/clean/boots/recall}} | {{p1/test/clean/boots/precision}} |
+| goggles | {{p1/test/clean/goggles/recall|n}} | {{p1/test/clean/goggles/map50}} | {{p1/test/clean/goggles/recall}} | {{p1/test/clean/goggles/precision}} |
+| none | {{p1/test/clean/none/recall|n}} | {{p1/test/clean/none/map50}} | {{p1/test/clean/none/recall}} | {{p1/test/clean/none/precision}} |
+| person | {{p1/test/clean/person/recall|n}} | {{p1/test/clean/person/map50}} | {{p1/test/clean/person/recall}} | {{p1/test/clean/person/precision}} |
+| **no_helmet** | {{p1/test/clean/no_helmet/recall|n}} | {{p1/test/clean/no_helmet/map50}} | **{{p1/test/clean/no_helmet/recall}}** [{{p1/test/clean/no_helmet/recall_ci95_low}}, {{p1/test/clean/no_helmet/recall_ci95_high}}] | {{p1/test/clean/no_helmet/precision}} |
+| **no_goggle** | {{p1/test/clean/no_goggle/recall|n}} | {{p1/test/clean/no_goggle/map50}} | **{{p1/test/clean/no_goggle/recall}}** [{{p1/test/clean/no_goggle/recall_ci95_low}}, {{p1/test/clean/no_goggle/recall_ci95_high}}] | {{p1/test/clean/no_goggle/precision}} |
+| **no_gloves** | {{p1/test/clean/no_gloves/recall|n}} | {{p1/test/clean/no_gloves/map50}} | **{{p1/test/clean/no_gloves/recall}}** [{{p1/test/clean/no_gloves/recall_ci95_low}}, {{p1/test/clean/no_gloves/recall_ci95_high}}] | {{p1/test/clean/no_gloves/precision}} |
+| **no_boots** | {{p1/test/clean/no_boots/recall|n}} | {{p1/test/clean/no_boots/map50}} | **{{p1/test/clean/no_boots/recall}}** [{{p1/test/clean/no_boots/recall_ci95_low}}, {{p1/test/clean/no_boots/recall_ci95_high}}] | {{p1/test/clean/no_boots/precision}} |
+| all (micro) | {{p1/test/clean/all/recall|n}} | {{p1/test/clean/all/map50}} | {{p1/test/clean/all/recall}} | {{p1/test/clean/all/precision}} |
+
+The violation classes are the weak point. Their mean recall is {{p1/test/clean/violation_classes/macro_recall}} on test
+(and {{p1/val/clean/violation_classes/macro_recall}} on validation). no_boots has {{p1/val/clean/no_boots/recall|n}} validation instances, so the
+validation split cannot measure it; on test the detector finds none of {{p1/test/clean/no_boots/recall|n}}.
+
+At the person level, {{p1/test/clean/person_any_violation/violation_recall|count}} of {{p1/test/clean/person_any_violation/violation_recall|n}} labelled violators
+raise a violation flag ({{p1/test/clean/person_any_violation/violation_recall}}, interval {{p1/test/clean/person_any_violation/violation_recall_ci95_low}}
+to {{p1/test/clean/person_any_violation/violation_recall_ci95_high}}); {{p1/test/clean/person_any_violation/false_alert_rate|count}} of
+{{p1/test/clean/person_any_violation/false_alert_rate|n}} predicted violation flags are false alerts, and {{p1/test/clean/person_any_violation/nonviolator_flag_rate|count}}
+of {{p1/test/clean/person_any_violation/nonviolator_flag_rate|n}} labelled non-violators are flagged. The detector finds
+{{p1/test/clean/person/recall|count}} of {{p1/test/clean/person/recall|n}} labelled persons; a worker who is not detected cannot be flagged at all.
+
+**Correction to the published figures.** The previously reported mAP@0.5 ({{p1/val/clean/all/map50}}) is a validation-split number; the test-split value is
+{{p1/test/clean/all/map50}}. The previously reported 20 FPS was not measured on edge hardware (section 5).
+[FLAG: Seed-to-seed variance of the training recipe is missing (six Colab retrains of YOLO11n and YOLO11s, seeds 0 to 2). Without it the paper cannot say whether differences of a few hundredths in mAP between models or recipes are real.]
+[FLAG: Only exact duplicate images between splits were checked; near-duplicate frames across train, validation and test were not, so the test figure may still be optimistic.]
+
+## 4. Site-shift study
+
+### 4.1 Setup
+
+The brief defines site shift through three real sources: SH17, CHV and at least 200 frames of own footage. None of them is on disk yet,
+so **every real-site cell is missing** and this section measures robustness to six synthetic image conditions instead:
+low light, haze or dust, motion blur, JPEG compression, rain and downscaling (a distant camera), each at three severities, applied to the
+same 141 golden images. Corruption parameters were fixed in configs/shift/p2_shift_yolo11s.yaml before any corrupted image was evaluated.
+Drops are paired (clean and corrupted recall on the same bootstrap resample), so their intervals are intervals of the drop itself.
+[FLAG: Question 1 (accuracy lost at a site the detector was not trained on) is unanswered. Synthetic corruptions of the same images keep the scenes, workers, cameras and label conventions; they are not a new site. Needs SH17, CHV or own-site footage (results/missing.md, Phase 2).]
+[FLAG: SH17 and CHV have no no_* classes, so even when added they cannot measure violation recall; only own-site footage with staged violations can answer question 1 for the violation classes.]
+
+### 4.2 Results
+
+**Table 2.** Severity-3 effect per condition on the test split. Δ = corrupted minus clean, with 95% paired bootstrap intervals.
+Clean: mAP@0.5 {{p2/test/clean/all/map50}}, micro recall {{p2/test/clean/all/recall}}, violation macro recall {{p2/test/clean/violation_classes/macro_recall}},
+violators flagged {{p2/test/clean/person_any_violation/violation_recall}}, false-alert share {{p2/test/clean/person_any_violation/false_alert_rate}}.
+
+| Condition | mAP@0.5 s1 / s2 / s3 | Δ micro recall s3 | Δ violation macro recall s3 | Micro precision s3 | Violators flagged s3 | False-alert share s3 |
+|---|---|---|---|---:|---:|---:|
+| low light | {{p2/test/low_light_s1/all/map50}} / {{p2/test/low_light_s2/all/map50}} / {{p2/test/low_light_s3/all/map50}} | {{p2/test/low_light_s3/all/recall_delta|signed}} [{{p2/test/low_light_s3/all/recall_delta_ci95_low|signed}}, {{p2/test/low_light_s3/all/recall_delta_ci95_high|signed}}] | {{p2/test/low_light_s3/violation_classes/macro_recall_delta|signed}} [{{p2/test/low_light_s3/violation_classes/macro_recall_delta_ci95_low|signed}}, {{p2/test/low_light_s3/violation_classes/macro_recall_delta_ci95_high|signed}}] | {{p2/test/low_light_s3/all/precision}} | {{p2/test/low_light_s3/person_any_violation/violation_recall}} | {{p2/test/low_light_s3/person_any_violation/false_alert_rate}} |
+| haze / dust | {{p2/test/haze_s1/all/map50}} / {{p2/test/haze_s2/all/map50}} / {{p2/test/haze_s3/all/map50}} | {{p2/test/haze_s3/all/recall_delta|signed}} [{{p2/test/haze_s3/all/recall_delta_ci95_low|signed}}, {{p2/test/haze_s3/all/recall_delta_ci95_high|signed}}] | {{p2/test/haze_s3/violation_classes/macro_recall_delta|signed}} [{{p2/test/haze_s3/violation_classes/macro_recall_delta_ci95_low|signed}}, {{p2/test/haze_s3/violation_classes/macro_recall_delta_ci95_high|signed}}] | {{p2/test/haze_s3/all/precision}} | {{p2/test/haze_s3/person_any_violation/violation_recall}} | {{p2/test/haze_s3/person_any_violation/false_alert_rate}} |
+| motion blur | {{p2/test/motion_blur_s1/all/map50}} / {{p2/test/motion_blur_s2/all/map50}} / {{p2/test/motion_blur_s3/all/map50}} | {{p2/test/motion_blur_s3/all/recall_delta|signed}} [{{p2/test/motion_blur_s3/all/recall_delta_ci95_low|signed}}, {{p2/test/motion_blur_s3/all/recall_delta_ci95_high|signed}}] | {{p2/test/motion_blur_s3/violation_classes/macro_recall_delta|signed}} [{{p2/test/motion_blur_s3/violation_classes/macro_recall_delta_ci95_low|signed}}, {{p2/test/motion_blur_s3/violation_classes/macro_recall_delta_ci95_high|signed}}] | {{p2/test/motion_blur_s3/all/precision}} | {{p2/test/motion_blur_s3/person_any_violation/violation_recall}} | {{p2/test/motion_blur_s3/person_any_violation/false_alert_rate}} |
+| JPEG | {{p2/test/jpeg_s1/all/map50}} / {{p2/test/jpeg_s2/all/map50}} / {{p2/test/jpeg_s3/all/map50}} | {{p2/test/jpeg_s3/all/recall_delta|signed}} [{{p2/test/jpeg_s3/all/recall_delta_ci95_low|signed}}, {{p2/test/jpeg_s3/all/recall_delta_ci95_high|signed}}] | {{p2/test/jpeg_s3/violation_classes/macro_recall_delta|signed}} [{{p2/test/jpeg_s3/violation_classes/macro_recall_delta_ci95_low|signed}}, {{p2/test/jpeg_s3/violation_classes/macro_recall_delta_ci95_high|signed}}] | {{p2/test/jpeg_s3/all/precision}} | {{p2/test/jpeg_s3/person_any_violation/violation_recall}} | {{p2/test/jpeg_s3/person_any_violation/false_alert_rate}} |
+| rain | {{p2/test/rain_s1/all/map50}} / {{p2/test/rain_s2/all/map50}} / {{p2/test/rain_s3/all/map50}} | {{p2/test/rain_s3/all/recall_delta|signed}} [{{p2/test/rain_s3/all/recall_delta_ci95_low|signed}}, {{p2/test/rain_s3/all/recall_delta_ci95_high|signed}}] | {{p2/test/rain_s3/violation_classes/macro_recall_delta|signed}} [{{p2/test/rain_s3/violation_classes/macro_recall_delta_ci95_low|signed}}, {{p2/test/rain_s3/violation_classes/macro_recall_delta_ci95_high|signed}}] | {{p2/test/rain_s3/all/precision}} | {{p2/test/rain_s3/person_any_violation/violation_recall}} | {{p2/test/rain_s3/person_any_violation/false_alert_rate}} |
+| downscale | {{p2/test/downscale_s1/all/map50}} / {{p2/test/downscale_s2/all/map50}} / {{p2/test/downscale_s3/all/map50}} | {{p2/test/downscale_s3/all/recall_delta|signed}} [{{p2/test/downscale_s3/all/recall_delta_ci95_low|signed}}, {{p2/test/downscale_s3/all/recall_delta_ci95_high|signed}}] | {{p2/test/downscale_s3/violation_classes/macro_recall_delta|signed}} [{{p2/test/downscale_s3/violation_classes/macro_recall_delta_ci95_low|signed}}, {{p2/test/downscale_s3/violation_classes/macro_recall_delta_ci95_high|signed}}] | {{p2/test/downscale_s3/all/precision}} | {{p2/test/downscale_s3/person_any_violation/violation_recall}} | {{p2/test/downscale_s3/person_any_violation/false_alert_rate}} |
+
+**Table 3.** Violation-class recall at severity 3 (boxes found / labelled). Clean: no_helmet {{p2/test/clean/no_helmet/recall|count}}/{{p2/test/clean/no_helmet/recall|n}},
+no_goggle {{p2/test/clean/no_goggle/recall|count}}/{{p2/test/clean/no_goggle/recall|n}}, no_gloves {{p2/test/clean/no_gloves/recall|count}}/{{p2/test/clean/no_gloves/recall|n}},
+no_boots {{p2/test/clean/no_boots/recall|count}}/{{p2/test/clean/no_boots/recall|n}}.
+
+| Condition | no_helmet | no_goggle | no_gloves | no_boots |
+|---|---:|---:|---:|---:|
+| low light | {{p2/test/low_light_s3/no_helmet/recall|count}} | {{p2/test/low_light_s3/no_goggle/recall|count}} | {{p2/test/low_light_s3/no_gloves/recall|count}} | {{p2/test/low_light_s3/no_boots/recall|count}} |
+| haze / dust | {{p2/test/haze_s3/no_helmet/recall|count}} | {{p2/test/haze_s3/no_goggle/recall|count}} | {{p2/test/haze_s3/no_gloves/recall|count}} | {{p2/test/haze_s3/no_boots/recall|count}} |
+| motion blur | {{p2/test/motion_blur_s3/no_helmet/recall|count}} | {{p2/test/motion_blur_s3/no_goggle/recall|count}} | {{p2/test/motion_blur_s3/no_gloves/recall|count}} | {{p2/test/motion_blur_s3/no_boots/recall|count}} |
+| JPEG | {{p2/test/jpeg_s3/no_helmet/recall|count}} | {{p2/test/jpeg_s3/no_goggle/recall|count}} | {{p2/test/jpeg_s3/no_gloves/recall|count}} | {{p2/test/jpeg_s3/no_boots/recall|count}} |
+| rain | {{p2/test/rain_s3/no_helmet/recall|count}} | {{p2/test/rain_s3/no_goggle/recall|count}} | {{p2/test/rain_s3/no_gloves/recall|count}} | {{p2/test/rain_s3/no_boots/recall|count}} |
+| downscale | {{p2/test/downscale_s3/no_helmet/recall|count}} | {{p2/test/downscale_s3/no_goggle/recall|count}} | {{p2/test/downscale_s3/no_gloves/recall|count}} | {{p2/test/downscale_s3/no_boots/recall|count}} |
+
+Findings, each with what it rests on:
+
+1. **Mild conditions cost little.** At severity 1, mAP@0.5 falls by between {{p2/test/rain_s1/all/map50_delta|abs}} (rain) and {{p2/test/motion_blur_s1/all/map50_delta|abs}} (motion blur). This small loss is a finding in its own right.
+2. **Severe conditions cost a lot, haze excepted.** At severity 3 mAP@0.5 falls to between {{p2/test/low_light_s3/all/map50}} (low light) and {{p2/test/rain_s3/all/map50}} (rain); haze only reaches {{p2/test/haze_s3/all/map50}}.
+3. **Blur, JPEG, rain and downscaling fail silently.** Violator flags almost disappear (Table 2) while micro precision stays between {{p2/test/jpeg_s3/all/precision}} and {{p2/test/rain_s3/all/precision}}. Alert precision therefore cannot reveal the drop; a monitor has to see the missing boxes.
+4. **Low light fails loudly instead.** Positive PPE classes collapse (helmet recall {{p2/test/low_light_s3/helmet/recall}} against {{p2/test/clean/helmet/recall}} clean) but no_helmet recall does not fall, and the false-alert share rises to {{p2/test/low_light_s3/person_any_violation/false_alert_rate}}, with {{p2/test/low_light_s3/person_any_violation/nonviolator_flag_rate}} of labelled non-violators flagged (none clean). Dark images push the model towards "no PPE".
+5. **no_goggle is the most fragile violation class.** Its recall falls in all 18 cells; already at JPEG severity 2 the drop is {{p2/test/jpeg_s2/no_goggle/recall_delta|signed}} (n = {{p2/test/jpeg_s2/no_goggle/recall_delta|n}}), and at severity 3 it reaches zero under four of six conditions (Table 3).
+6. **Person recall is the most robust class** except at the severe end of motion blur ({{p2/test/motion_blur_s3/person/recall_delta|signed}}), low light ({{p2/test/low_light_s3/person/recall_delta|signed}}), JPEG ({{p2/test/jpeg_s3/person/recall_delta|signed}}) and rain ({{p2/test/rain_s3/person/recall_delta|signed}}).
+
+Not comparable: no_boots starts at zero, so no drop can be observed for it (floor). Downscaling changes geometry and adds a grey border that training
+images never had. Low light and haze also alter the black letterbox bars that many test images carry. Person-level rows rest on
+{{p2/test/clean/person_any_violation/violation_recall|n}} labelled violators, so one violator moves them by about two hundredths.
+[FLAG: Finding 5's statement that no_goggle falls "in all 18 cells" is read from the per-cell rows (results/phase2_shift_table.md), not from a single stored row; a reviewer can check it with python -m ppe.shift --table, but the count itself is not in results.csv.]
+[FLAG: The heuristic that dark images push the model towards "no PPE" (finding 4) is inferred from these rows and was not tested further.]
+
+## 5. Edge cost study
+
+### 5.1 Quantisation under shift
+
+The detector was exported to ONNX, OpenVINO, NCNN and TFLite at FP32 and FP16, and to INT8 with OpenVINO (NNCF) and ONNX Runtime static
+quantisation (QDQ, MinMax calibration on 300 seeded training images, detection head kept in float). Each export was re-run on the clean golden set and on all 18
+shift cells at the same operating confidence. Exported FP32 models reproduce PyTorch's true-positive counts exactly on the deployed path
+(clean micro recall difference {{cmp/test/clean/all/recall_quant_diff@onnx_fp32 vs pytorch_fp32|signed}}), so quantisation effects are measured against ONNX FP32.
+"Widening" is the quantised model's shift drop minus the FP32 model's shift drop, with paired intervals.
+
+**Table 4.** Clean golden set and severe low light, per format (operating confidence {{p1/val/clean/all/operating_conf|.2f}}).
+
+| Format | Cell | mAP@0.5 | Micro recall | Violation macro recall | no_goggle (n = {{p1/test/clean/no_goggle/recall|n}}) | Violators flagged (n = {{p1/test/clean/person_any_violation/violation_recall|n}}) |
+|---|---|---:|---:|---:|---:|---:|
+| ONNX FP32 | clean | {{q_onnx32/test/clean/all/map50}} | {{q_onnx32/test/clean/all/recall}} | {{q_onnx32/test/clean/violation_classes/macro_recall}} | {{q_onnx32/test/clean/no_goggle/recall|count}} | {{q_onnx32/test/clean/person_any_violation/violation_recall|count}} |
+| ONNX INT8 | clean | {{q_onnx8/test/clean/all/map50}} | {{q_onnx8/test/clean/all/recall}} | {{q_onnx8/test/clean/violation_classes/macro_recall}} | {{q_onnx8/test/clean/no_goggle/recall|count}} | {{q_onnx8/test/clean/person_any_violation/violation_recall|count}} |
+| OpenVINO FP16 | clean | {{q_ov16/test/clean/all/map50}} | {{q_ov16/test/clean/all/recall}} | {{q_ov16/test/clean/violation_classes/macro_recall}} | {{q_ov16/test/clean/no_goggle/recall|count}} | {{q_ov16/test/clean/person_any_violation/violation_recall|count}} |
+| OpenVINO INT8 | clean | {{q_ov8/test/clean/all/map50}} | {{q_ov8/test/clean/all/recall}} | {{q_ov8/test/clean/violation_classes/macro_recall}} | {{q_ov8/test/clean/no_goggle/recall|count}} | {{q_ov8/test/clean/person_any_violation/violation_recall|count}} |
+| ONNX FP32 | low light s3 | {{q_onnx32/test/low_light_s3/all/map50}} | {{q_onnx32/test/low_light_s3/all/recall}} | {{q_onnx32/test/low_light_s3/violation_classes/macro_recall}} | {{q_onnx32/test/low_light_s3/no_goggle/recall|count}} | {{q_onnx32/test/low_light_s3/person_any_violation/violation_recall|count}} |
+| ONNX INT8 | low light s3 | {{q_onnx8/test/low_light_s3/all/map50}} | {{q_onnx8/test/low_light_s3/all/recall}} | {{q_onnx8/test/low_light_s3/violation_classes/macro_recall}} | {{q_onnx8/test/low_light_s3/no_goggle/recall|count}} | {{q_onnx8/test/low_light_s3/person_any_violation/violation_recall|count}} |
+| OpenVINO FP16 | low light s3 | {{q_ov16/test/low_light_s3/all/map50}} | {{q_ov16/test/low_light_s3/all/recall}} | {{q_ov16/test/low_light_s3/violation_classes/macro_recall}} | {{q_ov16/test/low_light_s3/no_goggle/recall|count}} | {{q_ov16/test/low_light_s3/person_any_violation/violation_recall|count}} |
+| OpenVINO INT8 | low light s3 | {{q_ov8/test/low_light_s3/all/map50}} | {{q_ov8/test/low_light_s3/all/recall}} | {{q_ov8/test/low_light_s3/violation_classes/macro_recall}} | {{q_ov8/test/low_light_s3/no_goggle/recall|count}} | {{q_ov8/test/low_light_s3/person_any_violation/violation_recall|count}} |
+
+- **ONNX Runtime INT8 widens the low-light loss.** Its micro-recall drop under low light s3 is wider than FP32's by {{cmp/test/low_light_s3/all/recall_delta_widening@onnx_int8 vs onnx_fp32|signed}}
+  [{{cmp/test/low_light_s3/all/recall_delta_widening_ci95_low@onnx_int8 vs onnx_fp32|signed}}, {{cmp/test/low_light_s3/all/recall_delta_widening_ci95_high@onnx_int8 vs onnx_fp32|signed}}],
+  and its person-level drop by {{cmp/test/low_light_s3/person_any_violation/violation_recall_delta_widening@onnx_int8 vs onnx_fp32|signed}}
+  [{{cmp/test/low_light_s3/person_any_violation/violation_recall_delta_widening_ci95_low@onnx_int8 vs onnx_fp32|signed}}, {{cmp/test/low_light_s3/person_any_violation/violation_recall_delta_widening_ci95_high@onnx_int8 vs onnx_fp32|signed}}].
+  Under haze s3 its violation macro recall is {{q_onnx8/test/haze_s3/violation_classes/macro_recall}} against {{q_onnx32/test/haze_s3/violation_classes/macro_recall}} for FP32.
+- **On clean images the same model looks harmless:** micro recall {{cmp/test/clean/all/recall_quant_diff@onnx_int8 vs onnx_fp32|signed}}
+  [{{cmp/test/clean/all/recall_quant_diff_ci95_low@onnx_int8 vs onnx_fp32|signed}}, {{cmp/test/clean/all/recall_quant_diff_ci95_high@onnx_int8 vs onnx_fp32|signed}}] against FP32.
+  A clean-golden-set check alone would have accepted it. Quantised models must be verified on shifted data.
+- **OpenVINO INT8** loses a little on clean images (micro recall {{cmp/test/clean/all/recall_quant_diff@openvino_int8 vs onnx_fp32|signed}}
+  [{{cmp/test/clean/all/recall_quant_diff_ci95_low@openvino_int8 vs onnx_fp32|signed}}, {{cmp/test/clean/all/recall_quant_diff_ci95_high@openvino_int8 vs onnx_fp32|signed}}])
+  and its low-light widening is {{cmp/test/low_light_s3/all/recall_delta_widening@openvino_int8 vs onnx_fp32|signed}}
+  [{{cmp/test/low_light_s3/all/recall_delta_widening_ci95_low@openvino_int8 vs onnx_fp32|signed}}, {{cmp/test/low_light_s3/all/recall_delta_widening_ci95_high@openvino_int8 vs onnx_fp32|signed}}].
+- **OpenVINO FP16** matches FP32: clean micro recall difference {{cmp/test/clean/all/recall_quant_diff@openvino_fp16 vs onnx_fp32|signed}}.
+
+[FLAG: "OpenVINO INT8 does not measurably widen the drop" and "ONNX INT8 widens it mainly under low light and haze" summarise counts of widening intervals that exclude zero across all cells (results/phase3_edge.md). Those counts are not stored as rows in results.csv; add a summary row to ppe.quant --compare before the paper states them as numbers. No multiple-comparison correction was applied.]
+[FLAG: The quantisation comparison ran on an x86 CPU. TFLite INT8 (the usual Raspberry Pi path) could not be built (the converter ran out of memory) and TensorRT INT8 (Jetson) needs an NVIDIA GPU. Whether quantisation widens the loss on the boards the brief targets is unmeasured.]
+
+### 5.2 Speed, memory and size
+
+**Table 5.** Cloud CPU benchmark (Intel Xeon, 4 vCPU, x86_64; **not an edge board**): batch 1, 640 px, 200 timed frames after 20 warm-up,
+3 runs per format in fresh processes. FPS is end-to-end (pre-processing, inference, post-processing), mean ± s.d. over the 3 runs.
+
+| Format | File (MB) | FPS | Latency p50 (ms) | Peak RSS (MB) |
+|---|---:|---:|---:|---:|
+| PyTorch FP32 | [FLAG: best.pt file size is not a results.csv row] | {{bench/val/bench/all/fps_e2e_mean@pytorch_fp32|.2f}} ± {{bench/val/bench/all/fps_e2e_std@pytorch_fp32|.2f}} | {{bench/val/bench/all/latency_ms_p50@pytorch_fp32|.1f}} | {{bench/val/bench/all/peak_rss_mb@pytorch_fp32|.1f}} |
+| ONNX FP32 | {{exp/*/export/all/model_size_mb@onnx_fp32|.1f}} | {{bench/val/bench/all/fps_e2e_mean@onnx_fp32|.2f}} ± {{bench/val/bench/all/fps_e2e_std@onnx_fp32|.2f}} | {{bench/val/bench/all/latency_ms_p50@onnx_fp32|.1f}} | {{bench/val/bench/all/peak_rss_mb@onnx_fp32|.1f}} |
+| ONNX INT8 | {{exp/*/export/all/model_size_mb@onnx_int8|.1f}} | {{bench/val/bench/all/fps_e2e_mean@onnx_int8|.2f}} ± {{bench/val/bench/all/fps_e2e_std@onnx_int8|.2f}} | {{bench/val/bench/all/latency_ms_p50@onnx_int8|.1f}} | {{bench/val/bench/all/peak_rss_mb@onnx_int8|.1f}} |
+| OpenVINO FP32 | {{exp/*/export/all/model_size_mb@openvino_fp32|.1f}} | {{bench/val/bench/all/fps_e2e_mean@openvino_fp32|.2f}} ± {{bench/val/bench/all/fps_e2e_std@openvino_fp32|.2f}} | {{bench/val/bench/all/latency_ms_p50@openvino_fp32|.1f}} | {{bench/val/bench/all/peak_rss_mb@openvino_fp32|.1f}} |
+| OpenVINO FP16 | {{exp/*/export/all/model_size_mb@openvino_fp16|.1f}} | {{bench/val/bench/all/fps_e2e_mean@openvino_fp16|.2f}} ± {{bench/val/bench/all/fps_e2e_std@openvino_fp16|.2f}} | {{bench/val/bench/all/latency_ms_p50@openvino_fp16|.1f}} | {{bench/val/bench/all/peak_rss_mb@openvino_fp16|.1f}} |
+| OpenVINO INT8 | {{exp/*/export/all/model_size_mb@openvino_int8|.1f}} | {{bench/val/bench/all/fps_e2e_mean@openvino_int8|.2f}} ± {{bench/val/bench/all/fps_e2e_std@openvino_int8|.2f}} | {{bench/val/bench/all/latency_ms_p50@openvino_int8|.1f}} | {{bench/val/bench/all/peak_rss_mb@openvino_int8|.1f}} |
+| NCNN FP32 | {{exp/*/export/all/model_size_mb@ncnn_fp32|.1f}} | {{bench/val/bench/all/fps_e2e_mean@ncnn_fp32|.2f}} ± {{bench/val/bench/all/fps_e2e_std@ncnn_fp32|.2f}} | {{bench/val/bench/all/latency_ms_p50@ncnn_fp32|.1f}} | {{bench/val/bench/all/peak_rss_mb@ncnn_fp32|.1f}} |
+| NCNN FP16 | {{exp/*/export/all/model_size_mb@ncnn_fp16|.1f}} | {{bench/val/bench/all/fps_e2e_mean@ncnn_fp16|.2f}} ± {{bench/val/bench/all/fps_e2e_std@ncnn_fp16|.2f}} | {{bench/val/bench/all/latency_ms_p50@ncnn_fp16|.1f}} | {{bench/val/bench/all/peak_rss_mb@ncnn_fp16|.1f}} |
+| TFLite FP32 | {{exp/*/export/all/model_size_mb@tflite_fp32|.1f}} | {{bench/val/bench/all/fps_e2e_mean@tflite_fp32|.2f}} ± {{bench/val/bench/all/fps_e2e_std@tflite_fp32|.2f}} | {{bench/val/bench/all/latency_ms_p50@tflite_fp32|.1f}} | {{bench/val/bench/all/peak_rss_mb@tflite_fp32|.1f}} |
+| TFLite FP16 | {{exp/*/export/all/model_size_mb@tflite_fp16|.1f}} | {{bench/val/bench/all/fps_e2e_mean@tflite_fp16|.2f}} ± {{bench/val/bench/all/fps_e2e_std@tflite_fp16|.2f}} | {{bench/val/bench/all/latency_ms_p50@tflite_fp16|.1f}} | {{bench/val/bench/all/peak_rss_mb@tflite_fp16|.1f}} |
+
+On this CPU OpenVINO is the fastest runtime and its INT8 is not faster than its FP32 (the difference is within the run-to-run spread).
+INT8 roughly quarters and FP16 roughly halves the file size. The VM is shared, so the same model varied between runs
+(OpenVINO FP16 has the largest spread, ± {{bench/val/bench/all/fps_e2e_std@openvino_fp16|.2f}} FPS); differences smaller than the spread should be read as no difference.
+NCNN and TFLite are optimised for ARM, so their x86 speed says nothing about a Raspberry Pi.
+[FLAG: Question 3 is unanswered. No Raspberry Pi or Jetson has been measured: FPS, latency, memory and energy per frame on the boards are missing, and energy has not been measured on any device (results/missing.md, Phase 3). The paper must not describe the system as "real-time" until board numbers exist.]
+[FLAG: Every YOLO11n row (accuracy, shift, quantisation, speed) is missing because YOLO11n has not been trained; the brief's comparison of model sizes cannot be made.]
+
+## 6. Reliability estimator
+
+### 6.1 Signals, fit and protocol
+
+Six label-free signals are computed per image and pooled over windows of 40 images: confidence drift (Kolmogorov-Smirnov statistic and mean shift
+of candidate confidences against a training-image reference), augmentation disagreement (flip, scale and brightness), temporal inconsistency,
+person-detector disagreement (a COCO-pretrained YOLO11n), orphan PPE (PPE boxes with no enclosing person) and backbone-feature Mahalanobis distance.
+The target is the recall drop at the operating confidence, paired against the same images clean. A ridge regressor (alpha fixed before scoring)
+is fitted on validation-split windows only and evaluated leave-one-condition-out: each condition is scored on golden-set windows by a model that never saw
+that condition. Two published label-free baselines, average confidence (AC) and average thresholded confidence (ATC), use clean validation as the source and are not fitted on shift.
+Golden-set clean micro recall recomputed inside this run equals the Phase 2 value ({{est/test/clean/all/true_recall_drop}} drop on clean, by construction of the pairing).
+[FLAG: The temporal-inconsistency signal is a still-image proxy (shaken, re-noised copies of each image), because the datasets contain no video. Its value on real video is unmeasured.]
+[FLAG: The brief's done-criterion is the estimator's error on a held-out SITE. Leave-one-condition-out on synthetic corruptions is a weaker hold-out (same images, scenes and cameras); the held-out-site error is missing until SH17, CHV or own footage is converted.]
+
+### 6.2 Results
+
+**Table 6.** Error of the estimated overall recall drop over the 18 shifted golden-set cells ({{est/test/shifted_18_cells/all/mae_window_signals|n}} windows; interval over cells).
+
+| Method | Window MAE [95%] | Bias | Full-cell MAE | Spearman over cells |
+|---|---|---:|---:|---:|
+| Six signals, condition held out | {{est/test/shifted_18_cells/all/mae_window_signals}} [{{est/test/shifted_18_cells/all/mae_window_signals_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_signals_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_signals|signed}} | {{est/test/shifted_18_cells/all/mae_cell_signals}} | {{est/test/shifted_18_cells/all/spearman_cell_signals}} |
+| AC baseline | {{est/test/shifted_18_cells/all/mae_window_ac}} [{{est/test/shifted_18_cells/all/mae_window_ac_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_ac_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_ac|signed}} | {{est/test/shifted_18_cells/all/mae_cell_ac}} | {{est/test/shifted_18_cells/all/spearman_cell_ac}} |
+| ATC baseline | {{est/test/shifted_18_cells/all/mae_window_atc}} [{{est/test/shifted_18_cells/all/mae_window_atc_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_atc_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_atc|signed}} | {{est/test/shifted_18_cells/all/mae_cell_atc}} | {{est/test/shifted_18_cells/all/spearman_cell_atc}} |
+| Confidence drift only | {{est/test/shifted_18_cells/all/mae_window_only_confidence_drift}} [{{est/test/shifted_18_cells/all/mae_window_only_confidence_drift_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_only_confidence_drift_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_only_confidence_drift|signed}} | {{est/test/shifted_18_cells/all/mae_cell_only_confidence_drift}} | {{est/test/shifted_18_cells/all/spearman_cell_only_confidence_drift}} |
+| Augmentation disagreement only | {{est/test/shifted_18_cells/all/mae_window_only_augmentation_disagreement}} [{{est/test/shifted_18_cells/all/mae_window_only_augmentation_disagreement_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_only_augmentation_disagreement_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_only_augmentation_disagreement|signed}} | {{est/test/shifted_18_cells/all/mae_cell_only_augmentation_disagreement}} | {{est/test/shifted_18_cells/all/spearman_cell_only_augmentation_disagreement}} |
+| Temporal proxy only | {{est/test/shifted_18_cells/all/mae_window_only_temporal_inconsistency}} [{{est/test/shifted_18_cells/all/mae_window_only_temporal_inconsistency_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_only_temporal_inconsistency_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_only_temporal_inconsistency|signed}} | {{est/test/shifted_18_cells/all/mae_cell_only_temporal_inconsistency}} | {{est/test/shifted_18_cells/all/spearman_cell_only_temporal_inconsistency}} |
+| Feature distance only | {{est/test/shifted_18_cells/all/mae_window_only_feature_distance}} [{{est/test/shifted_18_cells/all/mae_window_only_feature_distance_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_only_feature_distance_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_only_feature_distance|signed}} | {{est/test/shifted_18_cells/all/mae_cell_only_feature_distance}} | {{est/test/shifted_18_cells/all/spearman_cell_only_feature_distance}} |
+| Person-detector disagreement only | {{est/test/shifted_18_cells/all/mae_window_only_person_detector_disagreement}} [{{est/test/shifted_18_cells/all/mae_window_only_person_detector_disagreement_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_only_person_detector_disagreement_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_only_person_detector_disagreement|signed}} | {{est/test/shifted_18_cells/all/mae_cell_only_person_detector_disagreement}} | {{est/test/shifted_18_cells/all/spearman_cell_only_person_detector_disagreement}} |
+| Orphan PPE only | {{est/test/shifted_18_cells/all/mae_window_only_orphan_ppe}} [{{est/test/shifted_18_cells/all/mae_window_only_orphan_ppe_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_only_orphan_ppe_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_only_orphan_ppe|signed}} | {{est/test/shifted_18_cells/all/mae_cell_only_orphan_ppe}} | {{est/test/shifted_18_cells/all/spearman_cell_only_orphan_ppe}} |
+| Six signals, condition seen in fit | {{est/test/shifted_18_cells/all/mae_window_signals_imgholdout}} [{{est/test/shifted_18_cells/all/mae_window_signals_imgholdout_ci95_low}}, {{est/test/shifted_18_cells/all/mae_window_signals_imgholdout_ci95_high}}] | {{est/test/shifted_18_cells/all/bias_window_signals_imgholdout|signed}} | {{est/test/shifted_18_cells/all/mae_cell_signals_imgholdout}} | {{est/test/shifted_18_cells/all/spearman_cell_signals_imgholdout}} |
+
+- **The confidence baselines underestimate large drops.** Under low light s3 the true drop is {{est/test/low_light_s3/all/true_recall_drop}};
+  AC estimates {{est/test/low_light_s3/all/est_recall_drop_ac}} and ATC {{est/test/low_light_s3/all/est_recall_drop_atc}}. Confidence falls far less than recall does.
+- **A fitted regressor on label-free signals tracks the drop better** (full-cell MAE {{est/test/shifted_18_cells/all/mae_cell_signals}} against {{est/test/shifted_18_cells/all/mae_cell_ac}} and {{est/test/shifted_18_cells/all/mae_cell_atc}}).
+- **Negative result: the six signals do not beat confidence drift alone.** The intervals overlap, and person-detector disagreement and orphan PPE are weak on their own.
+- The largest errors are motion blur s3 (true {{est/test/motion_blur_s3/all/true_recall_drop}}, estimated {{est/test/motion_blur_s3/all/est_recall_drop_signals}}) and
+  downscale s1 (true {{est/test/downscale_s1/all/true_recall_drop}}, estimated {{est/test/downscale_s1/all/est_recall_drop_signals}}).
+
+**Violation classes (negative).** For the pooled recall of the four no_* classes, the signal model has window MAE {{est/test/shifted_18_cells/violation/mae_window_signals}}
+[{{est/test/shifted_18_cells/violation/mae_window_signals_ci95_low}}, {{est/test/shifted_18_cells/violation/mae_window_signals_ci95_high}}], AC {{est/test/shifted_18_cells/violation/mae_window_ac}}
+and ATC {{est/test/shifted_18_cells/violation/mae_window_atc}}. The baselines score lower only because they predict almost no drop and the true drops are small;
+their rank correlation with the truth is {{est/test/shifted_18_cells/violation/spearman_cell_ac}} (AC) and {{est/test/shifted_18_cells/violation/spearman_cell_atc}} (ATC).
+The signal model ranks cells better ({{est/test/shifted_18_cells/violation/spearman_cell_signals}}) but overestimates: under low light s3 the true violation drop is
+{{est/test/low_light_s3/violation/true_recall_drop}} and the estimate {{est/test/low_light_s3/violation/est_recall_drop_signals}}.
+**No method tested here estimates the violation-class drop usefully.**
+[FLAG: The brief's claim "the estimator predicts the recall drop on a held-out site within a stated error, without labels" is supported only for the overall (all-class) drop under held-out synthetic conditions. It is not supported for a real site, and not supported for violation-class recall.]
+
+**Lead time.** In synthetic streams (8 clean windows, then 10 windows in which a growing share of images is corrupted; 20 streams per condition),
+an alarm is the first window whose estimate reaches {{cfg:0.05:configs/estimator/p4_estimator_yolo11s.yaml}} and a real drop the first window whose true drop does.
+
+**Table 7.** Lead time at severity 3, overall recall (delay in windows, positive = late; missed and false-alarm counts out of 20 streams).
+
+| Stream | Six signals: delay / missed / false-alarm | AC | ATC |
+|---|---|---|---|
+| low light | {{est/test/stream_low_light_s3/all/alarm_delay_windows_mean_signals|signed}} / {{est/test/stream_low_light_s3/all/missed_drops_signals|int}} / {{est/test/stream_low_light_s3/all/false_alarm_streams_signals|int}} | {{est/test/stream_low_light_s3/all/alarm_delay_windows_mean_ac|signed}} / {{est/test/stream_low_light_s3/all/missed_drops_ac|int}} / {{est/test/stream_low_light_s3/all/false_alarm_streams_ac|int}} | {{est/test/stream_low_light_s3/all/alarm_delay_windows_mean_atc|signed}} / {{est/test/stream_low_light_s3/all/missed_drops_atc|int}} / {{est/test/stream_low_light_s3/all/false_alarm_streams_atc|int}} |
+| motion blur | {{est/test/stream_motion_blur_s3/all/alarm_delay_windows_mean_signals|signed}} / {{est/test/stream_motion_blur_s3/all/missed_drops_signals|int}} / {{est/test/stream_motion_blur_s3/all/false_alarm_streams_signals|int}} | {{est/test/stream_motion_blur_s3/all/alarm_delay_windows_mean_ac|signed}} / {{est/test/stream_motion_blur_s3/all/missed_drops_ac|int}} / {{est/test/stream_motion_blur_s3/all/false_alarm_streams_ac|int}} | {{est/test/stream_motion_blur_s3/all/alarm_delay_windows_mean_atc|signed}} / {{est/test/stream_motion_blur_s3/all/missed_drops_atc|int}} / {{est/test/stream_motion_blur_s3/all/false_alarm_streams_atc|int}} |
+| JPEG | {{est/test/stream_jpeg_s3/all/alarm_delay_windows_mean_signals|signed}} / {{est/test/stream_jpeg_s3/all/missed_drops_signals|int}} / {{est/test/stream_jpeg_s3/all/false_alarm_streams_signals|int}} | {{est/test/stream_jpeg_s3/all/alarm_delay_windows_mean_ac|signed}} / {{est/test/stream_jpeg_s3/all/missed_drops_ac|int}} / {{est/test/stream_jpeg_s3/all/false_alarm_streams_ac|int}} | {{est/test/stream_jpeg_s3/all/alarm_delay_windows_mean_atc|signed}} / {{est/test/stream_jpeg_s3/all/missed_drops_atc|int}} / {{est/test/stream_jpeg_s3/all/false_alarm_streams_atc|int}} |
+| rain | {{est/test/stream_rain_s3/all/alarm_delay_windows_mean_signals|signed}} / {{est/test/stream_rain_s3/all/missed_drops_signals|int}} / {{est/test/stream_rain_s3/all/false_alarm_streams_signals|int}} | {{est/test/stream_rain_s3/all/alarm_delay_windows_mean_ac|signed}} / {{est/test/stream_rain_s3/all/missed_drops_ac|int}} / {{est/test/stream_rain_s3/all/false_alarm_streams_ac|int}} | {{est/test/stream_rain_s3/all/alarm_delay_windows_mean_atc|signed}} / {{est/test/stream_rain_s3/all/missed_drops_atc|int}} / {{est/test/stream_rain_s3/all/false_alarm_streams_atc|int}} |
+| downscale | {{est/test/stream_downscale_s3/all/alarm_delay_windows_mean_signals|signed}} / {{est/test/stream_downscale_s3/all/missed_drops_signals|int}} / {{est/test/stream_downscale_s3/all/false_alarm_streams_signals|int}} | {{est/test/stream_downscale_s3/all/alarm_delay_windows_mean_ac|signed}} / {{est/test/stream_downscale_s3/all/missed_drops_ac|int}} / {{est/test/stream_downscale_s3/all/false_alarm_streams_ac|int}} | {{est/test/stream_downscale_s3/all/alarm_delay_windows_mean_atc|signed}} / {{est/test/stream_downscale_s3/all/missed_drops_atc|int}} / {{est/test/stream_downscale_s3/all/false_alarm_streams_atc|int}} |
+| haze | {{est/test/stream_haze_s3/all/alarm_delay_windows_mean_signals|signed}} / {{est/test/stream_haze_s3/all/missed_drops_signals|int}} / {{est/test/stream_haze_s3/all/false_alarm_streams_signals|int}} | {{est/test/stream_haze_s3/all/alarm_delay_windows_mean_ac|signed}} / {{est/test/stream_haze_s3/all/missed_drops_ac|int}} / {{est/test/stream_haze_s3/all/false_alarm_streams_ac|int}} | {{est/test/stream_haze_s3/all/alarm_delay_windows_mean_atc|signed}} / {{est/test/stream_haze_s3/all/missed_drops_atc|int}} / {{est/test/stream_haze_s3/all/false_alarm_streams_atc|int}} |
+
+The signal monitor raises the alarm within about one window of the real drop and misses none, while AC and ATC are several windows late or miss the drop.
+**Negative result: at this threshold the signal monitor false-alarms in most clean prefixes.** On clean windows its estimate scatters
+(clean-cell window MAE {{est/test/clean/all/mae_window_signals}} against {{est/test/clean/all/mae_window_ac}} for AC), so the fixed threshold fires on noise.
+Negative delays mean the alarm came before the real drop, which here is a false alarm rather than early warning.
+[FLAG: Lead time is measured on synthetic streams of still images, not on a real camera whose conditions drift over days. No claim about lead time in deployment is supported.]
+
+## 7. Gated self-improvement
+
+### 7.1 The loop
+
+Four modules (ppe/monitor.py, ppe/diagnose.py, ppe/improve.py, ppe/verify.py) run under one orchestrator (ppe/loop.py) with a state file.
+
+- **Monitor.** The confidence-drift estimator of section 6, refitted on validation cells with the scenario conditions left out. Its alarm
+  threshold is the 99th percentile of the estimate over clean validation windows: {{shift/val/clean/all/monitor_alarm_threshold|.4f}}.
+- **Diagnose.** Four label-free image-health checks per frame (black, flat or covered, frozen, blur) map a finding to the brief's three responses:
+  camera fault (alert a human, do not retrain), temporal drop (log and wait) and persistent shift ({{cfg:3:configs/loop/p5_site_shift.yaml}} consecutive alarmed windows; enter improve).
+- **Improve.** Buffer {{shift/train/stream/all/frames_pooled|int}} frames after the shift is declared, mine the {{shift/train/stream/all/frames_mined|int}} with the highest augmentation disagreement,
+  pseudo-label them, write a {{shift/train/stream/all/human_minutes|n}}-frame sample for human checking, and fine-tune from the current weights with {{shift/train/stream/all/replay_frames|int}} clean replay images
+  (10 epochs, backbone frozen).
+- **Verify.** The brief's gate on the frozen golden set: every no_* recall not lower than the incumbent's, mAP@0.5 not lower by more than
+  {{promo:site_shift/map50_tolerance|.2f}} (fixed in the configuration before the run), and recall on the new-site sample improved. Every decision is written to results/promotions.csv; the last three promoted weights are kept for rollback.
+
+What the scenarios are not: the streams are 40-frame windows of **training** images under the Phase 2 corruptions or synthetic camera faults, and
+the new-site sample is the validation split under the same corruption. The pseudo-labels are the images' own labels, a perfect-teacher stand-in.
+[FLAG: No real teacher was used. YOLO-World pseudo-labels (configs/loop/p5_site_shift_yolo_world.yaml) could not run because its text-encoder weights were unreachable, so the pseudo-label error rate of a real teacher is missing; the logged rate of {{shift/train/stream/all/pseudo_label_error_rate_vs_source}} holds by construction.]
+[FLAG: Human verification has not happened: human minutes are {{shift/train/stream/all/human_minutes|int}} and the human pseudo-label error rate is "pending" in promotions.csv. The paper cannot report the human cost of the loop, and must not describe it as self-improving without human input.]
+[FLAG: No scenario uses a real site stream; the "site shift" is low light applied to training images the detector has already seen clean.]
+
+### 7.2 Scenarios and the promotion log
+
+**Table 8.** Decisions in results/promotions.csv.
+
+| Scenario | Decision | Logged reason |
+|---|---|---|
+| Camera fault | {{promo:camera_fault/decision|text}} | {{promo:camera_fault/reason|text}} |
+| Transient drop (rain s3, two windows) | {{promo:transient/decision|text}} | {{promo:transient/reason|text}} |
+| Mild shift (low light s2) | {{promo:site_shift_mild/decision|text}} | {{promo:site_shift_mild/reason|text}} |
+| Site shift (low light s3) | **{{promo:site_shift/decision|text}}** | gate failed on no_goggle, no_gloves and mAP@0.5 (Table 9) |
+| Poisoned pseudo-labels | **{{promo:poisoned_pseudo_labels/decision|text}}** | gate failed on no_goggle (Table 9) |
+
+**Camera faults and a transient drop did not retrain**, as the brief requires (retrains: {{cam/train/stream/all/retrains|int}} and {{trans/train/stream/all/retrains|int}}).
+The two rain windows were alarmed (estimates {{trans/train/stream_w05_rain_s3/all/est_recall_drop}} and {{trans/train/stream_w06_rain_s3/all/est_recall_drop}};
+true drops {{trans/train/stream_w05_rain_s3/all/true_recall_drop}} and {{trans/train/stream_w06_rain_s3/all/true_recall_drop}}), recovered in the next window, and were logged and waited out.
+
+**Negative: false alarms on clean windows.** Clean training windows crossed the threshold in every stream; for example windows 2 and 3 of the transient stream
+have estimates {{trans/train/stream_w02_clean/all/est_recall_drop}} and {{trans/train/stream_w03_clean/all/est_recall_drop}} where the true drop is {{trans/train/stream_w02_clean/all/true_recall_drop}}.
+Only the consecutive-window rule kept them from triggering a retrain. These windows are the same frames in every stream (same seed), so the repeats are not independent.
+
+**Negative: the monitor missed a mild shift.** Under low light severity 2 the loop never declared a persistent shift (retrains: {{mild/train/stream/all/retrains|int}}),
+although recall stayed lower for the whole stream: the threshold needed to keep clean false alarms down is about the size of this drop.
+
+**Table 9.** Gate evidence for the two retrained candidates (golden set = clean golden v1; new-site sample = validation under low light s3).
+
+| Set | Metric | Incumbent | Site-shift candidate | Poisoned candidate |
+|---|---|---:|---:|---:|
+| Golden (gate) | no_helmet recall | {{promo:site_shift/incumbent_recall/no_helmet|frac}} | {{promo:site_shift/candidate_recall/no_helmet|frac}} | {{promo:poisoned_pseudo_labels/candidate_recall/no_helmet|frac}} |
+| | no_goggle recall | {{promo:site_shift/incumbent_recall/no_goggle|frac}} | **{{promo:site_shift/candidate_recall/no_goggle|frac}}** | **{{promo:poisoned_pseudo_labels/candidate_recall/no_goggle|frac}}** |
+| | no_gloves recall | {{promo:site_shift/incumbent_recall/no_gloves|frac}} | **{{promo:site_shift/candidate_recall/no_gloves|frac}}** | {{promo:poisoned_pseudo_labels/candidate_recall/no_gloves|frac}} |
+| | no_boots recall | {{promo:site_shift/incumbent_recall/no_boots|frac}} | {{promo:site_shift/candidate_recall/no_boots|frac}} | {{promo:poisoned_pseudo_labels/candidate_recall/no_boots|frac}} |
+| | mAP@0.5 | {{promo:site_shift/incumbent_map50|.4f}} | **{{promo:site_shift/candidate_map50|.4f}}** | {{promo:poisoned_pseudo_labels/candidate_map50|.4f}} |
+| New site (gate) | micro recall | {{promo:site_shift/incumbent_site_recall/all|.4f}} | {{promo:site_shift/candidate_site_recall/all|.4f}} | {{promo:poisoned_pseudo_labels/candidate_site_recall/all|.4f}} |
+| New site (report) | violation recall, pooled | {{shift/val/low_light_s3/violation_pooled/recall_incumbent}} | {{shift/val/low_light_s3/violation_pooled/recall_candidate}} | **{{poison/val/low_light_s3/violation_pooled/recall_candidate}}** |
+| Golden under low light s3 (report) | violation recall, pooled | {{shift/golden_v1/low_light_s3/violation_pooled/recall_incumbent}} | {{shift/golden_v1/low_light_s3/violation_pooled/recall_candidate}} | **{{poison/golden_v1/low_light_s3/violation_pooled/recall_candidate}}** |
+
+**The site-shift candidate was rejected for forgetting.** Persistent shift was declared at window {{shift/train/stream/all/retrain_trigger_window|int}}. The fine-tune nearly tripled recall at the
+dark site, but on clean golden images it lost no_goggle and no_gloves boxes and mAP@0.5 fell by more than the tolerance. The no_* rule compares raw recall on
+{{p1/test/clean/no_boots/recall|n}} to {{p1/test/clean/no_gloves/recall|n}} instances, where one box moves recall by a few hundredths; the gate is strict by design.
+
+**The poisoned candidate was rejected, but not because of the poison.** {{poison/train/stream/all/poisoned_boxes|int}} of {{poison/train/stream/all/poisoned_boxes|n}} pseudo-labels
+(every no_* box) were swapped to the compliant class (pseudo-label error rate {{poison/train/stream/all/pseudo_label_error_rate_vs_source}}). The candidate failed only the no_goggle rule,
+the same forgetting the clean candidate showed; on clean golden images it is no worse than the clean candidate. The poison is visible only at the site, where its violation recall
+falls below even the incumbent's on golden images under low light (Table 9). No gate rule looks at site violation recall: rule 3 checks all-class site recall, which the poisoned candidate still raised.
+**With a fine-tune that did not forget, this poisoned model would have passed the brief's gate.** This is a finding about the gate, not a success of it.
+
+**No recipe tried on validation passes.** Two further recipes, written before training and compared with the gate rules applied to the clean validation split
+instead of the golden set (to avoid tuning on the golden set), also lose validation no_* recall: more replay with fewer epochs (no_goggle
+{{recipe/val/clean/no_goggle/recall_candidate_r1_more_replay_short|count}} of {{recipe/val/clean/no_goggle/recall_candidate_r1_more_replay_short|n}} against {{recipe/val/clean/no_goggle/recall_incumbent_r1_more_replay_short|count}})
+and head-only fine-tuning (no_goggle {{recipe/val/clean/no_goggle/recall_candidate_r2_head_only|count}} of {{recipe/val/clean/no_goggle/recall_candidate_r2_head_only|n}}).
+Because the incumbent's checkpoint was selected on the validation split, this check is biased towards the incumbent.
+
+[FLAG: The brief's Phase 5 done-criterion (at least one promotion and one rejection) is not met: there is no promotion. The paper cannot yet claim "the gate rejected a harmful update and accepted a helpful one". The next step is a decision the project has to make: a Colab fine-tune with full replay, a new gate rule on site no_* recall, or a statistical no_* rule.]
+[FLAG: The claim "the gate rejects harmful updates" is not supported in its causal form: the poisoned candidate was rejected for forgetting, and the brief's three rules cannot see a poison that only harms the site.]
+[FLAG: Recall before and after a promotion, and monitor recalibration after a promotion, are missing because nothing was promoted.]
+
+## 8. Limitations
+
+- **Dataset size.** Every accuracy number rests on 141 test images. The violation classes have {{p1/test/clean/no_boots/recall|n}} to {{p1/test/clean/no_gloves/recall|n}} instances each and
+  there are {{p1/test/clean/person_any_violation/violation_recall|n}} labelled violators, so a single box or person moves a rate by two to four hundredths and most per-class intervals are wide.
+- **One dataset, one site.** Train, validation and test are random splits of Construction-PPE. No result here measures a different site (question 1), and the
+  synthetic conditions keep scenes, workers, cameras and label conventions fixed.
+- **Staged violations.** Construction-PPE violations, and any own footage the project records, are likely staged; their appearance may differ from real non-compliance.
+  [FLAG: Whether the dataset's violations are staged is not documented in the repository; confirm from the dataset source before stating it.]
+- **No board measurements.** Speed and memory come from a shared x86 VM; energy was not measured; TFLite INT8 and TensorRT were not built.
+- **Synthetic loop.** The loop ran on synthetic streams of training images with a perfect-teacher stand-in and no human check.
+- **One model, one training run.** Only the existing YOLO11s weights were evaluated; seed variance and YOLO11n are missing.
+- **Multiple comparisons.** Many per-class, per-cell intervals are reported without correction; individual intervals that exclude zero should be read as a count, not one by one.
+- **What the numbers do not prove.** They do not show that the detector, the estimator or the loop work at a real site, on an edge board, with a real teacher, or with human verification.
+
+## 9. Conclusion
+
+**Question 1 (site shift).** Unanswered. The real-site cells (SH17, CHV, own footage) are missing. On synthetic conditions of the same images, mild degradation
+costs little (mAP@0.5 drops of {{p2/test/rain_s1/all/map50_delta|abs}} to {{p2/test/motion_blur_s1/all/map50_delta|abs}} at severity 1), severe degradation costs a lot,
+and violation recall, already {{p1/test/clean/violation_classes/macro_recall}} on clean test images, falls further and mostly silently.
+
+**Question 2 (which classes and conditions; quantisation).** On synthetic conditions, no_goggle is the most fragile violation class, motion blur, JPEG, rain and downscaling
+remove violation alerts without lowering precision, and low light turns misses into false violations. Quantisation can widen the loss: ONNX Runtime static INT8 widens the
+low-light micro-recall drop by {{cmp/test/low_light_s3/all/recall_delta_widening@onnx_int8 vs onnx_fp32|abs}} while looking harmless on clean images; OpenVINO INT8 and FP16 do not measurably widen it on x86.
+Board-side quantisation (TFLite INT8, TensorRT) is unmeasured.
+
+**Question 3 (edge cost).** Unanswered for the boards. On a 4-vCPU x86 VM the fastest format is OpenVINO at about {{bench/val/bench/all/fps_e2e_mean@openvino_fp32|.1f}} FPS end to end;
+this does not predict a Raspberry Pi or a Jetson, and energy is unmeasured.
+
+**Label-free monitoring.** Fitted label-free signals estimate the overall recall drop of an unseen synthetic corruption better than the AC and ATC baselines, but confidence drift alone
+is as good as all six signals, the monitor false-alarms on clean windows at a threshold low enough to catch mild shifts, and no method estimates the violation-class drop.
+
+**Gated improvement.** The gate did what it is designed to do on clean golden data: it kept the incumbent when fine-tuning forgot violation recall. It has not yet accepted a helpful update,
+and its rules cannot detect a poisoned update whose harm is confined to the new site.
+[FLAG: The conclusion's answers to questions 1 and 3, and any claim of a successful promotion, must be rewritten once the missing results exist.]
+
+## Reproducing this draft
+
+```bash
+python -m ppe.paper            # renders paper/draft.md, paper/trace.csv and paper/flags.md from results/*.csv
+python -m ppe.paper --check    # fails if any number does not resolve to exactly one row
+```
+
+Each row of paper/trace.csv gives the run id and the command that regenerates the number. The commands for every missing result are in results/missing.md.

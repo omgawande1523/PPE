@@ -119,3 +119,11 @@ Phase 2 synthetic shift is measured: `results/phase2_shift.md` (18 cells, six co
 Phase 4 reliability estimator is measured on synthetic shift with leave-one-condition-out: `results/phase4_estimator.md`. The held-out-site error is missing.
 Phase 5 agentic loop runs end to end on synthetic streams: `results/phase5_loop.md`. Real-site streams, a real teacher and the human check are missing.
 Results not yet measured, with the command for each, are listed in `results/missing.md`.
+
+## Paper
+
+```bash
+python -m ppe.paper            # renders paper/draft.md from results/*.csv; paper/trace.csv traces every number to its row
+```
+
+Unsupported claims are listed in `paper/flags.md`. See `paper/README.md`.

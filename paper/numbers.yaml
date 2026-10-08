@@ -1,0 +1,25 @@
+# Short names for the runs the paper cites. Each value is a run_id in results/results.csv.
+# Change a run here (e.g. after a re-run) and re-render with: python -m ppe.paper
+runs:
+  p1: p1_baseline_yolo11s_20261007T175332Z
+  p1rep: p1_baseline_yolo11s_20261007T175540Z
+  p2: p2_shift_yolo11s_20261007T181833Z
+  q_pt: p3_quant_yolo11s_pytorch_fp32_20261007T191238Z
+  q_onnx32: p3_quant_yolo11s_onnx_fp32_20261007T193159Z
+  q_onnx8: p3_quant_yolo11s_onnx_int8_20261007T194131Z
+  q_ov8: p3_quant_yolo11s_openvino_int8_20261007T195005Z
+  q_ov16: p3_quant_yolo11s_openvino_fp16_20261007T195744Z
+  q_ov32: p3_quant_yolo11s_openvino_fp32_20261007T200427Z
+  q_ncnn32: p3_quant_yolo11s_ncnn_fp32_20261007T200443Z
+  q_ncnn16: p3_quant_yolo11s_ncnn_fp16_20261007T200518Z
+  q_tfl32: p3_quant_yolo11s_tflite_fp32_20261007T200551Z
+  cmp: p3_quant_yolo11s_compare_20261007T200711Z
+  exp: p3_export_yolo11s_20261007T201818Z
+  bench: p3_bench_cloud_cpu_20261007T203823Z
+  est: p4_estimator_yolo11s_20261008T000831Z
+  cam: p5_camera_fault_20261008T004548Z
+  trans: p5_transient_20261008T005019Z
+  mild: p5_site_shift_mild_20261008T005323Z
+  shift: p5_site_shift_20261008T005930Z
+  poison: p5_poisoned_20261008T013823Z
+  recipe: p5_recipe_study_20261008T021718Z
