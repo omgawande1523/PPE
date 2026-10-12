@@ -1,0 +1,17 @@
+# Pinned for reproducibility. Python 3.10 to 3.13.
+# ultralytics must stay at 8.3.21: best.pt was trained with it.
+ultralytics==8.3.21
+torch==2.6.0
+torchvision==0.21.0
+numpy==2.2.6
+opencv-python==4.11.0.86
+PyYAML==6.0.2
+python-dotenv==1.0.1
+lap==0.5.12                # ByteTrack association (ultralytics would otherwise try to pip-install it at runtime)
+
+# Flask dashboard (app/) and Twilio alerts (ppe/alerts/)
+Flask==3.1.0
+twilio==9.4.6
+
+# Tests
+pytest==8.3.5
