@@ -1,0 +1,28 @@
+# Phase 5 fine-tune recipe study, on the VALIDATION split only (no golden set).
+# Run (from the repository root), after the site-shift run named below exists:
+#   python -m ppe.recipe_study --config configs/loop/p5_recipe_study.yaml
+#
+# Why: the site-shift candidate (recipe r0) raised new-site recall but the golden gate rejected it
+# for forgetting. Re-trying recipes against the golden gate would tune on the golden set, so the
+# recipes are compared with the gate's rules applied to clean VAL instead (a dev gate). The two new
+# recipes were written before any of them was trained, each aimed at less forgetting:
+#   r1: more replay (300 instead of 200), half the epochs, half the learning rate
+#   r2: only the detection head trains (layers 0-22 frozen)
+# The loop config that follows (p5_site_shift_r*.yaml) uses the recipe chosen from these rows only.
+
+run_name: p5_recipe_study
+loop_config: configs/loop/p5_site_shift.yaml
+mined_from_run: p5_site_shift_20261008T005930Z      # its runs/loop/<id>/finetune_data holds the 200 mined frames
+
+recipes:
+  r0_original:                 # the rejected candidate itself, measured on val (no retraining)
+    weights: runs/loop/p5_site_shift_20261008T005930Z/train/candidate/weights/last.pt
+    n_replay: 200
+  r1_more_replay_short:
+    n_replay: 300
+    finetune: {epochs: 5, batch: 8, imgsz: 640, optimizer: SGD, lr0: 0.001, lrf: 0.5, warmup_epochs: 0,
+               freeze: 10, mosaic: 1.0, close_mosaic: 2, workers: 2}
+  r2_head_only:
+    n_replay: 200
+    finetune: {epochs: 10, batch: 8, imgsz: 640, optimizer: SGD, lr0: 0.002, lrf: 0.5, warmup_epochs: 0,
+               freeze: 23, mosaic: 1.0, close_mosaic: 3, workers: 2}

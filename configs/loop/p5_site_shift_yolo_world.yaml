@@ -1,0 +1,102 @@
+# Phase 5 scenario "real site shift" with a REAL teacher: YOLO-World (open vocabulary) instead of the
+# perfect-teacher stand-in. NOT RUN YET: the cloud container cannot download the CLIP text encoder that
+# YOLO-World needs for custom class prompts (openaipublic.azureedge.net is blocked). Run it on the laptop
+# or Colab, where that download works:
+#   pip install git+https://github.com/ultralytics/CLIP.git
+#   python -m ppe.loop --config configs/loop/p5_site_shift_yolo_world.yaml
+#
+# Same stream, site, mining, replay, fine-tune and gate as configs/loop/p5_site_shift.yaml. The teacher
+# labels only the classes it has a prompt for; the prompts were written before any teacher output was seen.
+# A label is kept only if the teacher finds it again on the flipped frame (agreement filter).
+#
+# Everything below was fixed before the run; nothing was changed after seeing a result.
+
+run_name: p5_site_shift_yolo_world
+scenario: site_shift_real_teacher
+phase: 5
+model: yolo11s
+weights: weights/best.pt
+ultralytics_version: "8.3.21"
+device: cpu
+imgsz: 640
+batch: 16
+seed: 0
+nms_iou: 0.7
+match_iou: 0.5
+operating_conf: 0.28          # Phase 1, chosen on val; never re-chosen
+cand_conf: 0.10               # candidate boxes for the confidence-drift monitor (Phase 4)
+
+data: configs/data/construction_ppe.yaml
+shift_config: configs/shift/p2_shift_yolo11s.yaml    # corruption code and parameters are Phase 2's
+golden_manifest: golden/golden_v1.csv
+
+window_size: 40
+stream:
+  segments:
+    - {kind: clean, windows: 5}
+    - {kind: condition, condition: low_light, severity: 3, windows: 20}
+site: {condition: low_light, severity: 3}           # the gate's new-site sample = val under this condition
+
+faults: {black_gain: 0.02, black_noise: 2.0, covered_sigma: 40, covered_gain: 0.35, defocus_sigma: 6}
+
+monitor:
+  reference_images: 300       # seeded train images: confidence reference and healthy-frame sharpness
+  fit_windows_per_cell: 20
+  ridge_alpha: 1.0
+  fit_exclude_conditions: [low_light, rain]   # the scenario conditions are unseen by the monitor's fit
+  threshold_windows: 200      # clean val windows for the alarm threshold
+  threshold_quantile: 0.99
+  min_threshold: 0.05         # Phase 4's fixed threshold, as a floor
+
+diagnose:
+  black_mean: 0.012           # mean intensity (0-1) below this = black frame
+  covered_std: 0.01           # intensity std below this = flat image (lens covered)
+  frozen_diff: 0.002          # mean abs difference from the previous frame below this = stuck
+  blur_ratio: 0.5             # sharpness below 0.5 x healthy 1st percentile = degradation (sudden blur)
+  fault_frac: 0.5             # share of faulty frames that makes a window a camera fault
+  persist_windows: 3          # consecutive alarmed windows = persistent shift
+  max_retrains: 1             # runaway guard: at most one retrain per run (the fixed period)
+  cooldown_windows: 10
+
+improve:
+  min_pool: 400               # frames buffered after the persistent shift before mining
+  n_mine: 200
+  min_mined: 100              # runaway guard: no retrain on fewer mined frames
+  augment: {scale: 0.75, brightness: 1.3}
+  teacher:
+    kind: yolo_world
+    weights:                  # offline teacher only; never deployed
+      path: weights/teacher/yolov8x-worldv2.pt
+      url: https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8x-worldv2.pt
+      sha256: 41e771bfbbb8894dd857f3fef7cac3b3578dffd49fd3547101efa6a606a02a0e
+    conf: 0.25
+    agree_iou: 0.5
+    prompts:                  # our class -> text prompt
+      helmet: hard hat
+      gloves: work gloves
+      vest: high visibility safety vest
+      boots: safety boots
+      goggles: safety goggles
+      person: person
+      no_helmet: bare head without a hard hat
+      no_gloves: bare hand
+      no_goggle: eyes without safety goggles
+      no_boots: sneakers
+  human_sample: 20
+  n_replay: 200               # clean train images with original labels (forgetting guard)
+  finetune:
+    epochs: 10
+    batch: 8
+    imgsz: 640
+    optimizer: SGD
+    lr0: 0.002
+    lrf: 0.5
+    warmup_epochs: 0
+    freeze: 10                # backbone frozen (layers 0-9): less forgetting, CPU-sized
+    mosaic: 1.0
+    close_mosaic: 3
+    workers: 2
+
+verify:
+  map50_tolerance: 0.02       # golden mAP@0.5 may fall by at most this; set before the run
+  keep_last: 3

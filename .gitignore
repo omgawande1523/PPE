@@ -24,3 +24,4 @@ venv/
 /*.pt
 calibration_image_sample_data_*.npy
 weights/coco/
+weights/teacher/
