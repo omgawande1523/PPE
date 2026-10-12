@@ -139,7 +139,11 @@ biased against any candidate. Even so, the direction agrees with the golden gate
   `python -m ppe.loop --human-check runs/loop/p5_site_shift_20261008T005930Z`.
 - A real site stream and real video for the temporal signal (SH17, CHV, own footage; Phase 2 and 4 rows).
 
-## The decision this needs
+## The decision this needed (2026-10-12: option 1 chosen)
+
+The full-replay retrain is `configs/loop/p5_site_shift_colab.yaml`, run with `notebooks/colab_phase5_retrain.ipynb`. Its result is missing until that notebook has run.
+
+Original options:
 
 The next step changes either the training budget or the gate, and both are the project's call:
 

@@ -65,6 +65,7 @@ python -m ppe.loop --config configs/loop/p5_camera_fault.yaml   # camera fault: 
 python -m ppe.loop --config configs/loop/p5_transient.yaml      # brief drop that recovers: must wait
 python -m ppe.loop --config configs/loop/p5_site_shift.yaml     # persistent shift: retrain, gate, promote or discard
 python -m ppe.loop --config configs/loop/p5_poisoned.yaml       # poisoned pseudo-labels: the gate must reject
+python -m ppe.loop --config configs/loop/p5_site_shift_colab.yaml  # full-replay retrain on GPU (notebooks/colab_phase5_retrain.ipynb)
 python -m ppe.loop --table                                      # promotions.csv and the Phase 5 rows as markdown
 python -m ppe.loop --human-check runs/loop/RUN_ID               # record the human check of the pseudo-labels
 python -m ppe.loop --rollback runs/loop/RUN_ID                  # back to the weights before the last promotion

@@ -177,7 +177,8 @@ class Run:
                       "last_retrain_window": None, "events": [], "windows": []}
         vf.save_state(self.state_path, self.state)
         self.base = {"run_id": self.run_id, "date": self.stamp.strftime("%Y-%m-%d"), "git_commit": git_commit(),
-                     "phase": cfg["phase"], "model": cfg["model"], "precision_mode": "fp32", "device": cfg["device"],
+                     "phase": cfg["phase"], "model": cfg["model"], "precision_mode": "fp32",
+                     "device": cfg.get("device_label", cfg["device"]),
                      "seed": self.seed, "command": command}
 
     # ------------------------------------------------------------------ bookkeeping
@@ -387,7 +388,12 @@ class Run:
         self.event(k, "human_check_written", frames=len(sample), folder=str(hc.relative_to(REPO_ROOT)),
                    status="pending: nobody has checked it")
 
-        replay_pool = [p for p in self.train if p.name not in self.shifted_src]
+        # replay pool: "unshifted" (default) = train images not shown under the shift in this stream;
+        # "all_train" = the whole original training set, clean, with its original labels
+        if ic.get("replay_pool", "unshifted") == "all_train":
+            replay_pool = list(self.train)
+        else:
+            replay_pool = [p for p in self.train if p.name not in self.shifted_src]
         rp = np.random.default_rng([self.seed, zlib.crc32(b"replay")]).choice(len(replay_pool), int(ic["n_replay"]),
                                                                                replace=False)
         replay = [replay_pool[i] for i in sorted(rp)]
@@ -593,6 +599,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--table", action="store_true", help="print the promotion log and Phase 5 rows")
     ap.add_argument("--human-check", metavar="RUN_DIR", help="record a filled-in human check")
     ap.add_argument("--rollback", metavar="RUN_DIR", help="restore the weights before the last promotion")
+    ap.add_argument("--device", help="override the config's device (e.g. cpu, 0); recorded in results.csv")
     args = ap.parse_args(argv)
     if args.table:
         return table()
@@ -604,6 +611,9 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--config is required")
     cfg = load_yaml(args.config)
     cfg["config_path"] = args.config
+    if args.device is not None:
+        cfg["device"] = int(args.device) if args.device.isdigit() else args.device
+        cfg["device_label"] = args.device
     command = "python -m ppe.loop " + " ".join(shlex.quote(a) for a in (argv if argv is not None else sys.argv[1:]))
     rows = Run(cfg, command).run()
     assert all(set(r) == set(FIELDS) for r in rows)

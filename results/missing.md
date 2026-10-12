@@ -63,7 +63,7 @@ two rejections are logged and there is **no promotion**.
 
 | Result | Why it is missing | Command |
 |---|---|---|
-| A promoted candidate | every candidate (2 loop runs, 2 val-only recipes) lost golden/val no_* recall; needs a decision: Colab fine-tune with full replay, or a gate change | after the decision: a new `configs/loop/p5_site_shift_*.yaml`, then `python -m ppe.loop --config` it |
+| A promoted candidate | every candidate so far (2 loop runs, 2 val-only recipes) lost golden/val no_* recall. Chosen fix (2026-10-12): retrain with the whole training set as replay, nothing frozen, 20 epochs; about 15 h on the cloud CPU, so it needs a GPU | Colab T4: `notebooks/colab_phase5_retrain.ipynb`, which runs `python -m ppe.loop --config configs/loop/p5_site_shift_colab.yaml` |
 | Real teacher (YOLO-World) pseudo-labels and their error rate | YOLO-World needs the CLIP text encoder, whose download (openaipublic.azureedge.net) is blocked in the cloud container | on the laptop or Colab: `pip install git+https://github.com/ultralytics/CLIP.git`, then `python -m ppe.loop --config configs/loop/p5_site_shift_yolo_world.yaml` |
 | Human pseudo-label error rate and human minutes | nobody has checked the 20-frame samples yet (runs/ is not committed: re-run the scenario to regenerate them) | fill `runs/loop/<run>/human_check/human_check.csv`, then `python -m ppe.loop --human-check runs/loop/<run>` |
 | Loop on a real site stream | no external site or own footage (Phase 2 rows) | add a stream segment type that reads site frames, then the site-shift config |
